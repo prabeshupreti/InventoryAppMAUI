@@ -1,0 +1,265 @@
+@typeparam TLine where TLine : DocumentLine
+@* Shared line-item editor for purchase orders and sales. Keeps totals, line editing and
+   validation display in one place so the two documents cannot drift apart visually. *@
+
+@if (Errors.Count > 0)
+{
+    <FluentMessageBar Intent="@MessageIntent.Error" Title="Please fix the following" Class="mb-2">
+        <ul style="margin:4px 0 0 18px; padding:0;">
+            @foreach (var error in Errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    </FluentMessageBar>
+}
+
+<FluentCard Class="mb-2">
+    <div class="form-grid">
+        @if (!ShowFreeTextParty)
+        {
+            <FluentSelect TOption="LookupItem"
+                          Label="@PartyLabel"
+                          Items="@PartyOptions"
+                          OptionValue="@(i => i.Id.ToString())"
+                          OptionText="@(i => i.Name)"
+                          Value="@PartyId"
+                          ValueChanged="@(v => PartyIdChanged.InvokeAsync(v))"
+                          Placeholder="Select"
+                          Disabled="@Busy"
+                          Style="width:100%" />
+        }
+        else
+        {
+            <FluentTextField Label="@PartyLabel"
+                             Value="@PartyText"
+                             ValueChanged="@(v => PartyTextChanged.InvokeAsync(v))"
+                             Placeholder="Walk-in customer"
+                             Disabled="@Busy"
+                             Style="width:100%" />
+        }
+
+        <FluentDatePicker Label="Document date"
+                          Value="@DocumentDate"
+                          ValueChanged="@(v => DocumentDateChanged.InvokeAsync(v))"
+                          Disabled="@Busy"
+                          Style="width:100%" />
+
+        @if (ShowExpectedDate)
+        {
+            <FluentDatePicker Label="Expected date"
+                              Value="@ExpectedDate"
+                              ValueChanged="@(v => ExpectedDateChanged.InvokeAsync(v))"
+                              Disabled="@Busy"
+                              Style="width:100%" />
+        }
+
+        <FluentNumberField TValue="decimal"
+                           Label="Tax rate (%)"
+                           Value="@TaxRate"
+                           ValueChanged="@(v => TaxRateChanged.InvokeAsync(v))"
+                           Min="0" Max="100" Step="0.5"
+                           Disabled="@Busy"
+                           Style="width:100%" />
+
+        <FluentNumberField TValue="decimal"
+                           Label="Discount amount"
+                           Value="@Discount"
+                           ValueChanged="@(v => DiscountChanged.InvokeAsync(v))"
+                           Min="0" Step="0.01"
+                           Disabled="@Busy"
+                           Style="width:100%" />
+
+        <div class="form-span-2">
+            <FluentTextArea Label="Notes"
+                            Value="@Notes"
+                            ValueChanged="@(v => NotesChanged.InvokeAsync(v))"
+                            Rows="2" Disabled="@Busy" Style="width:100%" />
+        </div>
+    </div>
+</FluentCard>
+
+<FluentCard Class="mb-2">
+    <FluentStack VerticalAlignment="VerticalAlignment.Center" Class="mb-2">
+        <h2 class="panel-title" style="margin:0">Line items</h2>
+        <FluentSpacer />
+        <FluentButton IconStart="@(new Icons.Regular.Size16.Add())" Disabled="@Busy"
+                      OnClick="@(() => OnAddLine.InvokeAsync())">
+            Add line
+        </FluentButton>
+    </FluentStack>
+
+    <div class="line-list">
+        @foreach (var line in Lines)
+        {
+            var current = line;
+            <div class="doc-line">
+                <FluentCombobox TOption="LookupItem"
+                                Label="Product"
+                                Items="@Products"
+                                OptionValue="@(i => i.Id.ToString())"
+                                OptionText="@(i => i.Name)"
+                                Value="@current.ProductId"
+                                ValueChanged="@(v => OnProductChangedAsync(current, v))"
+                                Autocomplete="ComboboxAutocomplete.Both"
+                                Placeholder="Search product"
+                                Disabled="@Busy"
+                                Style="width:100%" />
+
+                <FluentNumberField TValue="int"
+                                   Label="Qty"
+                                   Value="@current.Quantity"
+                                   ValueChanged="@(v => OnQuantityChanged(current, v))"
+                                   Min="1" Disabled="@Busy" Style="width:100%" />
+
+                <FluentNumberField TValue="decimal"
+                                   Label="@PriceLabel"
+                                   Value="@current.UnitPrice"
+                                   ValueChanged="@(v => OnUnitPriceChanged(current, v))"
+                                   Min="0" Step="0.01" Disabled="@Busy" Style="width:100%" />
+
+                <div class="doc-line__total">
+                    <div class="stat-card__label">Line total</div>
+                    <div class="numeric" style="font-weight:600">@FormatHelpers.Money((double)current.LineTotal)</div>
+                </div>
+
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Icons.Regular.Size16.Delete())"
+                              Title="Remove line"
+                              Disabled="@Busy"
+                              OnClick="@(() => OnRemoveLine.InvokeAsync(current))" />
+
+                @if (current is SaleLine saleLine && saleLine.AvailableStock > 0 && saleLine.Quantity > saleLine.AvailableStock)
+                {
+                    <div class="doc-line__warning">
+                        <FluentLabel Color="Color.Error" Typo="Typography.Body">
+                            Only @saleLine.AvailableStock in stock.
+                        </FluentLabel>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</FluentCard>
+
+<FluentCard>
+    <div class="totals">
+        <div class="totals__row">
+            <span>Subtotal</span><span class="numeric">@FormatHelpers.Money((double)Subtotal)</span>
+        </div>
+        <div class="totals__row">
+            <span>Discount</span><span class="numeric">-@FormatHelpers.Money((double)DiscountApplied)</span>
+        </div>
+        <div class="totals__row">
+            <span>Tax (@TaxRate.ToString("0.##")%)</span>
+            <span class="numeric">@FormatHelpers.Money((double)TaxAmount)</span>
+        </div>
+        <div class="totals__row totals__row--grand">
+            <span>Total</span><span class="numeric">@FormatHelpers.Money((double)Total)</span>
+        </div>
+    </div>
+
+    <FluentStack HorizontalAlignment="HorizontalAlignment.End" HorizontalGap="8" Class="mt-2">
+        @FooterActions
+    </FluentStack>
+</FluentCard>
+
+<style>
+    .doc-line {
+        display: grid;
+        grid-template-columns: minmax(0, 2.4fr) 90px 130px 120px 44px;
+        gap: 10px;
+        align-items: end;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--neutral-stroke-divider-rest);
+    }
+
+        .doc-line:last-child {
+            border-bottom: none;
+        }
+
+    .doc-line__total {
+        text-align: right;
+    }
+
+    .doc-line__warning {
+        grid-column: 1 / -1;
+    }
+
+    @@media (max-width: 720px) {
+        .doc-line {
+            grid-template-columns: 1fr 1fr;
+        }
+
+            .doc-line > *:first-child {
+                grid-column: 1 / -1;
+            }
+
+        .doc-line__total {
+            grid-column: 1 / -1;
+            text-align: left;
+        }
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public List<TLine> Lines { get; set; } = new();
+    [Parameter] public List<LookupItem> Products { get; set; } = new();
+    [Parameter] public List<LookupItem> PartyOptions { get; set; } = new();
+    [Parameter] public string PartyLabel { get; set; } = "Party";
+    [Parameter] public string PriceLabel { get; set; } = "Unit price";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public List<string> Errors { get; set; } = new();
+    [Parameter] public bool ShowExpectedDate { get; set; }
+    [Parameter] public bool ShowFreeTextParty { get; set; }
+    [Parameter] public RenderFragment? FooterActions { get; set; }
+
+    [Parameter] public string? PartyId { get; set; }
+    [Parameter] public EventCallback<string?> PartyIdChanged { get; set; }
+
+    [Parameter] public string? PartyText { get; set; }
+    [Parameter] public EventCallback<string?> PartyTextChanged { get; set; }
+
+    [Parameter] public DateTime? DocumentDate { get; set; }
+    [Parameter] public EventCallback<DateTime?> DocumentDateChanged { get; set; }
+
+    [Parameter] public DateTime? ExpectedDate { get; set; }
+    [Parameter] public EventCallback<DateTime?> ExpectedDateChanged { get; set; }
+
+    [Parameter] public decimal TaxRate { get; set; }
+    [Parameter] public EventCallback<decimal> TaxRateChanged { get; set; }
+
+    [Parameter] public decimal Discount { get; set; }
+    [Parameter] public EventCallback<decimal> DiscountChanged { get; set; }
+
+    [Parameter] public string? Notes { get; set; }
+    [Parameter] public EventCallback<string?> NotesChanged { get; set; }
+
+    [Parameter] public EventCallback OnAddLine { get; set; }
+    [Parameter] public EventCallback<TLine> OnRemoveLine { get; set; }
+    [Parameter] public EventCallback<TLine> OnProductChosen { get; set; }
+
+    private decimal Subtotal => decimal.Round(Lines.Sum(l => l.LineTotal), 2);
+    private decimal DiscountApplied => Math.Min(Math.Max(Discount, 0), Subtotal);
+    private decimal TaxAmount => decimal.Round((Subtotal - DiscountApplied) * (TaxRate / 100m), 2);
+    private decimal Total => decimal.Round(Subtotal - DiscountApplied + TaxAmount, 2);
+
+    private async Task OnProductChangedAsync(TLine line, string? value)
+    {
+        line.ProductId = value;
+        await OnProductChosen.InvokeAsync(line);
+        StateHasChanged();
+    }
+
+    private void OnQuantityChanged(TLine line, int value)
+    {
+        line.Quantity = value;
+        StateHasChanged();
+    }
+
+    private void OnUnitPriceChanged(TLine line, decimal value)
+    {
+        line.UnitPrice = value;
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,9 @@
+<div style="display:flex; gap:12px; justify-content:space-between; align-items:baseline;">
+    <span style="color:var(--neutral-foreground-hint); font-size:var(--type-ramp-minus-1-font-size);">@Label</span>
+    <span style="text-align:right; min-width:0; overflow-wrap:anywhere;">@Value</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Value { get; set; }
+}

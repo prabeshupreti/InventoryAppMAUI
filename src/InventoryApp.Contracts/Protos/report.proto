@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package inventory.reporting;
+option csharp_namespace = "InventoryApp.Contracts.Reporting";
+
+import "common.proto";
+import "inventory.proto";
+
+service ReportService {
+  rpc GetDashboard (inventory.common.Empty) returns (DashboardResponse);
+  rpc GetInventoryValuation (InventoryReportRequest) returns (InventoryValuationResponse);
+  rpc GetStockStatusReport (InventoryReportRequest) returns (InventoryValuationResponse);
+  rpc GetPurchaseReport (TradeReportRequest) returns (TradeReportResponse);
+  rpc GetSalesReport (TradeReportRequest) returns (TradeReportResponse);
+  rpc ExportCsv (ExportRequest) returns (inventory.common.CsvExport);
+}
+
+enum ReportType {
+  REPORT_TYPE_UNSPECIFIED = 0;
+  REPORT_TYPE_CURRENT_INVENTORY = 1;
+  REPORT_TYPE_LOW_STOCK = 2;
+  REPORT_TYPE_OUT_OF_STOCK = 3;
+  REPORT_TYPE_INVENTORY_VALUATION = 4;
+  REPORT_TYPE_STOCK_MOVEMENTS = 5;
+  REPORT_TYPE_PURCHASES = 6;
+  REPORT_TYPE_SALES = 7;
+}
+
+message InventoryReportRequest {
+  ReportType report_type = 1;
+  optional int32 category_id = 2;
+  optional int32 supplier_id = 3;
+  string search = 4;
+}
+
+message InventoryValuationRow {
+  int32 product_id = 1;
+  string sku = 2;
+  string name = 3;
+  string category_name = 4;
+  string supplier_name = 5;
+  int32 current_stock = 6;
+  int32 minimum_stock = 7;
+  double cost_price = 8;
+  double unit_price = 9;
+  double stock_value = 10;
+  double retail_value = 11;
+  inventory.stock.MovementType last_movement_type = 12;
+  optional string last_movement_at_utc = 13;
+}
+
+message InventoryValuationResponse {
+  repeated InventoryValuationRow rows = 1;
+  int32 total_products = 2;
+  int32 total_units = 3;
+  double total_stock_value = 4;
+  double total_retail_value = 5;
+}
+
+message TradeReportRequest {
+  inventory.common.DateRange date_range = 1;
+  optional int32 supplier_id = 2;
+  optional int32 category_id = 3;
+  optional int32 product_id = 4;
+}
+
+message TradeReportRow {
+  string document_number = 1;
+  string date_utc = 2;
+  string party = 3;          // supplier or customer
+  string status = 4;
+  int32 line_count = 5;
+  int32 total_quantity = 6;
+  double total_amount = 7;
+}
+
+message TradeReportResponse {
+  repeated TradeReportRow rows = 1;
+  int32 document_count = 2;
+  int32 total_quantity = 3;
+  double total_amount = 4;
+}
+
+message ExportRequest {
+  ReportType report_type = 1;
+  optional int32 category_id = 2;
+  optional int32 supplier_id = 3;
+  optional int32 product_id = 4;
+  optional inventory.stock.MovementType movement_type = 5;
+  inventory.common.DateRange date_range = 6;
+  string search = 7;
+}
+
+// ---- Dashboard ----
+
+message DashboardCounter {
+  string label = 1;
+  double value = 2;
+  string format = 3;   // "int" | "money"
+}
+
+message DashboardSeriesPoint {
+  string label = 1;
+  double value = 2;
+  double secondary_value = 3;
+}
+
+message DashboardProduct {
+  int32 id = 1;
+  string sku = 2;
+  string name = 3;
+  int32 current_stock = 4;
+  int32 minimum_stock = 5;
+  double stock_value = 6;
+  string created_at_utc = 7;
+}
+
+message DashboardDocument {
+  int32 id = 1;
+  string number = 2;
+  string party = 3;
+  string status = 4;
+  double total = 5;
+  string date_utc = 6;
+}
+
+message DashboardResponse {
+  int32 total_products = 1;
+  int32 total_categories = 2;
+  int32 total_suppliers = 3;
+  double total_inventory_value = 4;
+  double total_retail_value = 5;
+  int32 low_stock_count = 6;
+  int32 out_of_stock_count = 7;
+  int32 total_units_in_stock = 8;
+  double purchases_last_30_days = 9;
+  double sales_last_30_days = 10;
+  repeated DashboardProduct recently_added = 11;
+  repeated DashboardProduct low_stock_products = 12;
+  repeated inventory.stock.StockMovementDto recent_movements = 13;
+  repeated DashboardDocument recent_purchases = 14;
+  repeated DashboardDocument recent_sales = 15;
+  repeated DashboardSeriesPoint value_by_category = 16;
+  repeated DashboardSeriesPoint monthly_trade = 17;  // value=purchases, secondary=sales
+}

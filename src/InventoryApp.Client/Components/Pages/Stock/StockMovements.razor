@@ -1,0 +1,261 @@
+@page "/stock"
+@attribute [Authorize(Policy = Permissions.ViewStock)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Stock movements - Inventory Manager</PageTitle>
+
+<PageHeading Title="Stock movements"
+             Subtitle="Every quantity change, with who did it and why">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.ReceiveStock">
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Icons.Regular.Size16.ArrowSwap())"
+                          OnClick="OpenOperationAsync">
+                Move stock
+            </FluentButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeading>
+
+<div class="toolbar">
+    <div class="toolbar__grow">
+        <FluentSearch @bind-Value="_search" @bind-Value:after="ReloadFirstPageAsync"
+                      Immediate="true" ImmediateDelay="350"
+                      Label="Search" Placeholder="Product, reason or reference" Style="width:100%" />
+    </div>
+
+    <FluentSelect TOption="string" Label="Type" Items="@_typeOptions"
+                  OptionValue="@(s => s)" OptionText="@(s => s)"
+                  @bind-Value="_typeFilter" @bind-Value:after="ReloadFirstPageAsync" Width="180px" />
+
+    <FluentSelect TOption="LookupItem" Label="Category" Items="@_categories"
+                  OptionValue="@(i => i.Id.ToString())" OptionText="@(i => i.Name)"
+                  @bind-Value="_categoryFilter" @bind-Value:after="ReloadFirstPageAsync"
+                  Placeholder="All categories" Width="190px" />
+
+    <FluentDatePicker @bind-Value="_fromDate" @bind-Value:after="ReloadFirstPageAsync"
+                      Label="From" Style="width:150px" />
+
+    <FluentDatePicker @bind-Value="_toDate" @bind-Value:after="ReloadFirstPageAsync"
+                      Label="To" Style="width:150px" />
+
+    <FluentButton IconStart="@(new Icons.Regular.Size16.FilterDismiss())" OnClick="ClearFiltersAsync">
+        Clear
+    </FluentButton>
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="ReloadAsync" />
+}
+else if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading movement history..." />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty"
+                Title="No movements found"
+                Message="Nothing matches the current filters." />
+}
+else
+{
+    <FluentCard>
+        <div class="grid-scroll" style="opacity:@(_loading ? "0.6" : "1");">
+            <FluentDataGrid Items="@_items.AsQueryable()" TGridItem="StockMovementDto"
+                            GridTemplateColumns="1.2fr 1.6fr 1.1fr 0.6fr 0.9fr 1.6fr 1fr">
+                <TemplateColumn Title="Date">@FormatHelpers.DateTimeShort(context.CreatedAtUtc)</TemplateColumn>
+
+                <TemplateColumn Title="Product">
+                    <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{context.ProductId}")">
+                        @context.ProductName
+                    </FluentAnchor>
+                    <div class="line-row__meta">@context.ProductSku</div>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Type">
+                    <FluentBadge Appearance="Appearance.Neutral"
+                                 BackgroundColor="@FormatHelpers.MovementColor(context.MovementType)"
+                                 Color="white">
+                        @FormatHelpers.MovementLabel(context.MovementType)
+                    </FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Qty" Align="Align.End">
+                    <span class="numeric" style="color:@FormatHelpers.MovementColor(context.MovementType)">
+                        @FormatHelpers.Signed(context.Quantity)
+                    </span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Balance" Align="Align.End">
+                    <span class="numeric">@context.PreviousQuantity &rarr; @context.NewQuantity</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Reason">
+                    @context.Reason
+                    @if (!string.IsNullOrWhiteSpace(context.Reference))
+                    {
+                        <div class="line-row__meta">Ref: @context.Reference</div>
+                    }
+                </TemplateColumn>
+
+                <PropertyColumn Property="@(m => m.UserName)" Title="User" />
+            </FluentDataGrid>
+        </div>
+
+        <Pager PageInfo="_pageInfo" CurrentPage="_page" Busy="_loading" OnPageChanged="GoToPageAsync" />
+    </FluentCard>
+}
+
+@code {
+    private readonly List<StockMovementDto> _items = [];
+    private List<LookupItem> _categories = [];
+    private PageInfo? _pageInfo;
+
+    private readonly string[] _typeOptions =
+        ["All", "Stock in", "Stock out", "Adjustment", "Purchase receipt", "Sale", "Sale return", "Transfer"];
+
+    private string _search = string.Empty;
+    private string _typeFilter = "All";
+    private string? _categoryFilter;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+
+    private int _page = 1;
+    private bool _loading = true;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var categories = await Api.GetCategoryLookupAsync();
+            _categories = categories.Items.ToList();
+        }
+        catch (ApiException) { /* filter is optional */ }
+
+        await ReloadAsync();
+    }
+
+    private Task ReloadFirstPageAsync()
+    {
+        _page = 1;
+        return ReloadAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        _page = page;
+        return ReloadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _search = string.Empty;
+        _typeFilter = "All";
+        _categoryFilter = null;
+        _fromDate = null;
+        _toDate = null;
+        await ReloadFirstPageAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var request = new ListMovementsRequest
+            {
+                Page = new PageRequest
+                {
+                    Page = _page,
+                    PageSize = 25,
+                    Search = _search ?? string.Empty
+                },
+                DateRange = BuildDateRange()
+            };
+
+            if (int.TryParse(_categoryFilter, out var categoryId) && categoryId > 0)
+            {
+                request.CategoryId = categoryId;
+            }
+
+            var type = _typeFilter switch
+            {
+                "Stock in" => MovementType.StockIn,
+                "Stock out" => MovementType.StockOut,
+                "Adjustment" => MovementType.Adjustment,
+                "Purchase receipt" => MovementType.PurchaseReceipt,
+                "Sale" => MovementType.Sale,
+                "Sale return" => MovementType.SaleReturn,
+                "Transfer" => MovementType.Transfer,
+                _ => MovementType.Unspecified
+            };
+
+            if (type != MovementType.Unspecified)
+            {
+                request.MovementType = type;
+            }
+
+            var response = await Api.ListMovementsAsync(request, _cts.Token);
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _pageInfo = response.PageInfo;
+            _page = response.PageInfo.Page == 0 ? 1 : response.PageInfo.Page;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private DateRange BuildDateRange()
+    {
+        var range = new DateRange();
+
+        if (_fromDate.HasValue)
+        {
+            range.FromUtc = FormatHelpers.ToIso(_fromDate.Value.Date);
+        }
+
+        if (_toDate.HasValue)
+        {
+            range.ToUtc = FormatHelpers.ToIso(_toDate.Value.Date);
+        }
+
+        return range;
+    }
+
+    private async Task OpenOperationAsync()
+    {
+        var dialog = await DialogService.ShowDialogAsync<StockOperationDialog>(
+            new ProductDto(),
+            new DialogParameters
+            {
+                Title = "Move stock",
+                PreventDismissOnOverlayClick = true,
+                Width = "min(560px, 94vw)"
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await ReloadFirstPageAsync();
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

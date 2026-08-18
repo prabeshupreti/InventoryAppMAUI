@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>InventoryApp.Contracts</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Grpc.Net.Client brings in Grpc.Core.Api which the generated client stubs need.
+         Grpc.Tools runs protoc at build time (compile-time only asset). -->
+    <PackageReference Include="Google.Protobuf" Version="3.35.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authorization" Version="10.0.11" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.83.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.83.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GrpcServices="Both" generates the service base classes (used by the API)
+         and the typed clients (used by the MAUI app) from a single contract assembly. -->
+    <Protobuf Include="Protos\**\*.proto" GrpcServices="Both" ProtoRoot="Protos\" />
+  </ItemGroup>
+
+</Project>

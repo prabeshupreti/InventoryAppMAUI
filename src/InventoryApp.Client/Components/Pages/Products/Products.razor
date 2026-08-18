@@ -1,0 +1,339 @@
+@page "/products"
+@attribute [Authorize(Policy = Permissions.ViewProducts)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject IDialogService DialogService
+@inject IToastService ToastService
+@inject NavigationManager Navigation
+
+<PageTitle>Products - Inventory Manager</PageTitle>
+
+<PageHeading Title="Products" Subtitle="@($"{_pageInfo?.TotalCount ?? 0} product(s) match your filters")">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.ManageProducts">
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Icons.Regular.Size16.Add())"
+                          OnClick="@(() => OpenEditorAsync(null))">
+                New product
+            </FluentButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeading>
+
+<div class="toolbar">
+    <div class="toolbar__grow">
+        <FluentSearch @bind-Value="_search"
+                      @bind-Value:after="OnSearchChangedAsync"
+                      Immediate="true"
+                      ImmediateDelay="350"
+                      Label="Search"
+                      Placeholder="Name, SKU or barcode"
+                      Style="width:100%" />
+    </div>
+
+    <FluentSelect TOption="LookupItem"
+                  Label="Category"
+                  Items="@_categories"
+                  OptionValue="@(i => i.Id.ToString())"
+                  OptionText="@(i => i.Name)"
+                  @bind-Value="_categoryFilter"
+                  @bind-Value:after="ReloadFirstPageAsync"
+                  Placeholder="All categories"
+                  Width="190px" />
+
+    <FluentSelect TOption="LookupItem"
+                  Label="Supplier"
+                  Items="@_suppliers"
+                  OptionValue="@(i => i.Id.ToString())"
+                  OptionText="@(i => i.Name)"
+                  @bind-Value="_supplierFilter"
+                  @bind-Value:after="ReloadFirstPageAsync"
+                  Placeholder="All suppliers"
+                  Width="190px" />
+
+    <FluentSelect TOption="string"
+                  Label="Stock status"
+                  Items="@_statusOptions"
+                  OptionValue="@(s => s)"
+                  OptionText="@(s => s)"
+                  @bind-Value="_statusFilter"
+                  @bind-Value:after="ReloadFirstPageAsync"
+                  Width="170px" />
+
+    <FluentSwitch @bind-Value="_activeOnly" @bind-Value:after="ReloadFirstPageAsync" Label="Active only" />
+
+    <FluentButton IconStart="@(new Icons.Regular.Size16.FilterDismiss())" OnClick="ClearFiltersAsync">
+        Clear
+    </FluentButton>
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="ReloadFirstPageAsync" />
+}
+else if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading products..." />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty"
+                Title="No products found"
+                Message="No product matches the current filters.">
+        <Actions>
+            <FluentButton OnClick="ClearFiltersAsync">Clear filters</FluentButton>
+        </Actions>
+    </StateBlock>
+}
+else
+{
+    <FluentCard>
+        <div class="grid-scroll" style="opacity:@(_loading ? "0.6" : "1"); transition:opacity 120ms;">
+            <FluentDataGrid Items="@_items.AsQueryable()"
+                            TGridItem="ProductDto"
+                            ResizableColumns="true"
+                            GridTemplateColumns="1.1fr 2fr 1.2fr 1.2fr 0.9fr 0.9fr 1fr 0.8fr">
+
+                <PropertyColumn Property="@(p => p.Sku)" Title="SKU" Sortable="true"
+                                Class="mono" InitialSortDirection="SortDirection.Ascending" />
+
+                <TemplateColumn Title="Product" Sortable="true" SortBy="@_nameSort">
+                    <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{context.Id}")">
+                        @context.Name
+                    </FluentAnchor>
+                    @if (!context.IsActive)
+                    {
+                        <FluentBadge Appearance="Appearance.Neutral" Class="ml-1">Inactive</FluentBadge>
+                    }
+                </TemplateColumn>
+
+                <PropertyColumn Property="@(p => p.CategoryName)" Title="Category" Sortable="true" />
+                <PropertyColumn Property="@(p => p.SupplierName)" Title="Supplier" Sortable="true" />
+
+                <TemplateColumn Title="Cost" Align="Align.End" Sortable="true" SortBy="@_costSort">
+                    <span class="numeric">@FormatHelpers.Money(context.CostPrice)</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Price" Align="Align.End" Sortable="true" SortBy="@_priceSort">
+                    <span class="numeric">@FormatHelpers.Money(context.UnitPrice)</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Stock" Align="Align.End" Sortable="true" SortBy="@_stockSort">
+                    <FluentStack HorizontalAlignment="HorizontalAlignment.End"
+                                 VerticalAlignment="VerticalAlignment.Center" HorizontalGap="6">
+                        <span class="numeric">@FormatHelpers.Number(context.CurrentStock)</span>
+                        <FluentBadge Appearance="Appearance.Neutral"
+                                     BackgroundColor="@FormatHelpers.StockStatusColor(context.StockStatus)"
+                                     Color="white"
+                                     Title="@FormatHelpers.StockStatusLabel(context.StockStatus)">
+                            @FormatHelpers.StockStatusLabel(context.StockStatus)
+                        </FluentBadge>
+                    </FluentStack>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Actions" Align="Align.End">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Icons.Regular.Size16.Eye())"
+                                  Title="View details"
+                                  OnClick="@(() => Navigation.NavigateTo($"/products/{context.Id}"))" />
+
+                    <AuthorizeView Policy="@Permissions.ManageProducts" Context="auth">
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Icons.Regular.Size16.Edit())"
+                                      Title="Edit product"
+                                      OnClick="@(() => OpenEditorAsync(context))" />
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="@Permissions.DeleteProducts" Context="auth">
+                        <ConfirmButton Icon="@(new Icons.Regular.Size16.Delete())"
+                                       Tooltip="Delete product"
+                                       ConfirmTitle="Delete product"
+                                       ConfirmMessage="@($"Delete '{context.Name}'? This cannot be undone.")"
+                                       ConfirmLabel="Delete"
+                                       SuccessMessage="@($"'{context.Name}' was deleted.")"
+                                       Action="@(() => Api.DeleteProductAsync(context.Id))"
+                                       OnCompleted="ReloadAsync" />
+                    </AuthorizeView>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <FluentStack Class="mt-2" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="12">
+            <FluentLabel Typo="Typography.Body" Color="Color.Disabled">
+                Page @(_pageInfo?.Page ?? 1) of @(Math.Max(_pageInfo?.TotalPages ?? 1, 1))
+                &middot; @(_pageInfo?.TotalCount ?? 0) total
+            </FluentLabel>
+            <FluentSpacer />
+            <FluentButton IconStart="@(new Icons.Regular.Size16.ChevronLeft())"
+                          Disabled="@(_page <= 1 || _loading)"
+                          OnClick="@(() => GoToPageAsync(_page - 1))">Previous</FluentButton>
+            <FluentButton IconEnd="@(new Icons.Regular.Size16.ChevronRight())"
+                          Disabled="@(_pageInfo is null || _page >= _pageInfo.TotalPages || _loading)"
+                          OnClick="@(() => GoToPageAsync(_page + 1))">Next</FluentButton>
+        </FluentStack>
+    </FluentCard>
+}
+
+@code {
+    private readonly List<ProductDto> _items = [];
+    private List<LookupItem> _categories = [];
+    private List<LookupItem> _suppliers = [];
+    private readonly string[] _statusOptions = ["All", "In stock", "Low stock", "Out of stock"];
+
+    private PageInfo? _pageInfo;
+    private string _search = string.Empty;
+    private string? _categoryFilter;
+    private string? _supplierFilter;
+    private string _statusFilter = "All";
+    private bool _activeOnly = true;
+
+    private int _page = 1;
+    private const int PageSize = 20;
+    private string _sortBy = "name";
+    private bool _sortDescending;
+
+    private bool _loading = true;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    // Sort delegates map grid columns onto server-side sort keys.
+    private readonly GridSort<ProductDto> _nameSort = GridSort<ProductDto>.ByAscending(p => p.Name);
+    private readonly GridSort<ProductDto> _costSort = GridSort<ProductDto>.ByAscending(p => p.CostPrice);
+    private readonly GridSort<ProductDto> _priceSort = GridSort<ProductDto>.ByAscending(p => p.UnitPrice);
+    private readonly GridSort<ProductDto> _stockSort = GridSort<ProductDto>.ByAscending(p => p.CurrentStock);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLookupsAsync();
+        await ReloadAsync();
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        try
+        {
+            var categories = await Api.GetCategoryLookupAsync();
+            var suppliers = await Api.GetSupplierLookupAsync();
+            _categories = categories.Items.ToList();
+            _suppliers = suppliers.Items.ToList();
+        }
+        catch (ApiException ex)
+        {
+            ToastService.ShowWarning($"Filters unavailable: {ex.Message}");
+        }
+    }
+
+    private Task OnSearchChangedAsync() => ReloadFirstPageAsync();
+
+    private Task ReloadFirstPageAsync()
+    {
+        _page = 1;
+        return ReloadAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        _page = Math.Max(1, page);
+        return ReloadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _search = string.Empty;
+        _categoryFilter = null;
+        _supplierFilter = null;
+        _statusFilter = "All";
+        _activeOnly = true;
+        await ReloadFirstPageAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            // Filtering, sorting and paging all happen on the server: the client never
+            // holds more than one page of products in memory.
+            var request = new ListProductsRequest
+            {
+                Page = new PageRequest
+                {
+                    Page = _page,
+                    PageSize = PageSize,
+                    Search = _search ?? string.Empty,
+                    SortBy = _sortBy,
+                    SortDescending = _sortDescending
+                },
+                OnlyActive = _activeOnly ? true : false
+            };
+
+            if (int.TryParse(_categoryFilter, out var categoryId) && categoryId > 0)
+            {
+                request.CategoryId = categoryId;
+            }
+
+            if (int.TryParse(_supplierFilter, out var supplierId) && supplierId > 0)
+            {
+                request.SupplierId = supplierId;
+            }
+
+            var status = _statusFilter switch
+            {
+                "In stock" => StockStatus.InStock,
+                "Low stock" => StockStatus.LowStock,
+                "Out of stock" => StockStatus.OutOfStock,
+                _ => StockStatus.Unspecified
+            };
+
+            if (status != StockStatus.Unspecified)
+            {
+                request.StockStatus = status;
+            }
+
+            var response = await Api.ListProductsAsync(request, _cts.Token);
+
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _pageInfo = response.PageInfo;
+            _page = response.PageInfo.Page == 0 ? 1 : response.PageInfo.Page;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException)
+        {
+            // replaced by a newer request
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenEditorAsync(ProductDto? product)
+    {
+        var dialog = await DialogService.ShowDialogAsync<ProductEditor>(
+            product ?? new ProductDto(),
+            new DialogParameters
+            {
+                Title = product is null ? "New product" : $"Edit {product.Name}",
+                PreventDismissOnOverlayClick = true,
+                Width = "min(760px, 94vw)"
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

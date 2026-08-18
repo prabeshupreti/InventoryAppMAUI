@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package inventory.catalog;
+option csharp_namespace = "InventoryApp.Contracts.Catalog";
+
+import "common.proto";
+
+service ProductService {
+  rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
+  rpc GetProduct (inventory.common.IdRequest) returns (ProductDto);
+  rpc GetProductBySku (GetProductBySkuRequest) returns (ProductDto);
+  rpc CreateProduct (CreateProductRequest) returns (ProductDto);
+  rpc UpdateProduct (UpdateProductRequest) returns (ProductDto);
+  rpc DeleteProduct (inventory.common.IdRequest) returns (inventory.common.OperationResult);
+  rpc GetProductLookup (ProductLookupRequest) returns (inventory.common.LookupList);
+}
+
+enum StockStatus {
+  STOCK_STATUS_UNSPECIFIED = 0;
+  STOCK_STATUS_IN_STOCK = 1;
+  STOCK_STATUS_LOW_STOCK = 2;
+  STOCK_STATUS_OUT_OF_STOCK = 3;
+}
+
+message ProductDto {
+  int32 id = 1;
+  string sku = 2;
+  string name = 3;
+  string description = 4;
+  int32 category_id = 5;
+  string category_name = 6;
+  int32 supplier_id = 7;
+  string supplier_name = 8;
+  double unit_price = 9;
+  double cost_price = 10;
+  int32 current_stock = 11;
+  int32 minimum_stock = 12;
+  int32 maximum_stock = 13;
+  string unit_of_measure = 14;
+  string barcode = 15;
+  string image_url = 16;
+  string location = 17;
+  bool is_active = 18;
+  StockStatus stock_status = 19;
+  double stock_value = 20;      // current_stock * cost_price
+  string created_at_utc = 21;
+  string updated_at_utc = 22;
+}
+
+message ListProductsRequest {
+  inventory.common.PageRequest page = 1;
+  optional int32 category_id = 2;
+  optional int32 supplier_id = 3;
+  optional bool only_active = 4;
+  optional StockStatus stock_status = 5;
+}
+
+message ListProductsResponse {
+  repeated ProductDto items = 1;
+  inventory.common.PageInfo page_info = 2;
+}
+
+message GetProductBySkuRequest {
+  string sku = 1;   // matches SKU or barcode
+}
+
+message ProductLookupRequest {
+  optional bool only_active = 1;
+  string search = 2;
+}
+
+message CreateProductRequest {
+  string sku = 1;
+  string name = 2;
+  string description = 3;
+  int32 category_id = 4;
+  int32 supplier_id = 5;
+  double unit_price = 6;
+  double cost_price = 7;
+  int32 opening_stock = 8;
+  int32 minimum_stock = 9;
+  int32 maximum_stock = 10;
+  string unit_of_measure = 11;
+  string barcode = 12;
+  string image_url = 13;
+  string location = 14;
+  bool is_active = 15;
+}
+
+// NOTE: stock is intentionally NOT updatable here.
+// All quantity changes go through InventoryService so that every change is audited.
+message UpdateProductRequest {
+  int32 id = 1;
+  string sku = 2;
+  string name = 3;
+  string description = 4;
+  int32 category_id = 5;
+  int32 supplier_id = 6;
+  double unit_price = 7;
+  double cost_price = 8;
+  int32 minimum_stock = 9;
+  int32 maximum_stock = 10;
+  string unit_of_measure = 11;
+  string barcode = 12;
+  string image_url = 13;
+  string location = 14;
+  bool is_active = 15;
+}

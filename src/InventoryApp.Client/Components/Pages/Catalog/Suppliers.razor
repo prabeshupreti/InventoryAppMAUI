@@ -1,0 +1,195 @@
+@page "/suppliers"
+@attribute [Authorize(Policy = Permissions.ViewCatalog)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Suppliers - Inventory Manager</PageTitle>
+
+<PageHeading Title="Suppliers"
+             Subtitle="@($"{_pageInfo?.TotalCount ?? 0} supplier(s)")"
+             Breadcrumbs="@(new List<PageHeading.Crumb> { new("Catalogue", "/categories") })">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.ManageCatalog">
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Icons.Regular.Size16.Add())"
+                          OnClick="@(() => OpenEditorAsync(null))">
+                New supplier
+            </FluentButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeading>
+
+<div class="toolbar">
+    <div class="toolbar__grow">
+        <FluentSearch @bind-Value="_search" @bind-Value:after="ReloadFirstPageAsync"
+                      Immediate="true" ImmediateDelay="350"
+                      Label="Search" Placeholder="Company, contact, email or phone" Style="width:100%" />
+    </div>
+    <FluentSwitch @bind-Value="_activeOnly" @bind-Value:after="ReloadFirstPageAsync" Label="Active only" />
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="ReloadAsync" />
+}
+else if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading suppliers..." />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty"
+                Title="No suppliers found"
+                Message="Add a supplier to start recording purchase orders." />
+}
+else
+{
+    <FluentCard>
+        <div class="grid-scroll" style="opacity:@(_loading ? "0.6" : "1");">
+            <FluentDataGrid Items="@_items.AsQueryable()" TGridItem="SupplierDto"
+                            GridTemplateColumns="1.6fr 1.1fr 1.4fr 1fr 0.7fr 0.7fr 0.9fr">
+                <PropertyColumn Property="@(s => s.CompanyName)" Title="Company" Sortable="true" />
+                <PropertyColumn Property="@(s => s.ContactPerson)" Title="Contact" />
+
+                <TemplateColumn Title="Email">
+                    @if (string.IsNullOrWhiteSpace(context.Email))
+                    {
+                        <span>-</span>
+                    }
+                    else
+                    {
+                        <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"mailto:{context.Email}")">
+                            @context.Email
+                        </FluentAnchor>
+                    }
+                </TemplateColumn>
+
+                <PropertyColumn Property="@(s => s.Phone)" Title="Phone" />
+
+                <TemplateColumn Title="Products" Align="Align.End">
+                    <span class="numeric">@FormatHelpers.Number(context.ProductCount)</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <FluentBadge Appearance="Appearance.Neutral"
+                                 BackgroundColor="@(context.IsActive ? "var(--success)" : "var(--neutral-fill-secondary-rest)")"
+                                 Color="@(context.IsActive ? "white" : "var(--neutral-foreground-rest)")">
+                        @(context.IsActive ? "Active" : "Inactive")
+                    </FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Actions" Align="Align.End">
+                    <AuthorizeView Policy="@Permissions.ManageCatalog" Context="auth">
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Icons.Regular.Size16.Edit())"
+                                      Title="Edit supplier"
+                                      OnClick="@(() => OpenEditorAsync(context))" />
+
+                        <ConfirmButton Icon="@(new Icons.Regular.Size16.Delete())"
+                                       Tooltip="@(context.ProductCount > 0
+                                           ? "Supplies products - deactivate instead"
+                                           : "Delete supplier")"
+                                       Disabled="@(context.ProductCount > 0)"
+                                       ConfirmTitle="Delete supplier"
+                                       ConfirmMessage="@($"Delete '{context.CompanyName}'? This cannot be undone.")"
+                                       ConfirmLabel="Delete"
+                                       SuccessMessage="@($"'{context.CompanyName}' was deleted.")"
+                                       Action="@(() => Api.DeleteSupplierAsync(context.Id))"
+                                       OnCompleted="ReloadAsync" />
+                    </AuthorizeView>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <Pager PageInfo="_pageInfo" CurrentPage="_page" Busy="_loading" OnPageChanged="GoToPageAsync" />
+    </FluentCard>
+}
+
+@code {
+    private readonly List<SupplierDto> _items = [];
+    private PageInfo? _pageInfo;
+    private string _search = string.Empty;
+    private bool _activeOnly;
+    private int _page = 1;
+    private bool _loading = true;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private Task ReloadFirstPageAsync()
+    {
+        _page = 1;
+        return ReloadAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        _page = page;
+        return ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var request = new ListSuppliersRequest
+            {
+                Page = new PageRequest
+                {
+                    Page = _page,
+                    PageSize = 20,
+                    Search = _search ?? string.Empty,
+                    SortBy = "companyName"
+                }
+            };
+
+            if (_activeOnly)
+            {
+                request.OnlyActive = true;
+            }
+
+            var response = await Api.ListSuppliersAsync(request, _cts.Token);
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _pageInfo = response.PageInfo;
+            _page = response.PageInfo.Page == 0 ? 1 : response.PageInfo.Page;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenEditorAsync(SupplierDto? supplier)
+    {
+        var dialog = await DialogService.ShowDialogAsync<SupplierEditor>(
+            supplier ?? new SupplierDto { IsActive = true },
+            new DialogParameters
+            {
+                Title = supplier is null ? "New supplier" : $"Edit {supplier.CompanyName}",
+                PreventDismissOnOverlayClick = true,
+                Width = "min(640px, 94vw)"
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

@@ -1,0 +1,120 @@
+@inherits LayoutComponentBase
+@inject InventoryAuthStateProvider AuthProvider
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+
+<AuthorizeView>
+    <Authorized>
+        <FluentLayout>
+            <FluentHeader>
+                <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalGap="10">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Icons.Regular.Size20.Navigation())"
+                                  Title="Toggle navigation"
+                                  Class="nav-toggle"
+                                  OnClick="@(() => _navExpanded = !_navExpanded)" />
+                    <FluentIcon Value="@(new Icons.Filled.Size24.BoxMultiple())" Color="Color.Fill" />
+                    <FluentLabel Typo="Typography.PaneHeader">Inventory Manager</FluentLabel>
+
+                    <FluentSpacer />
+
+                    <FluentLabel Typo="Typography.Body" Class="header-user">
+                        @context.User.FindFirst("fullName")?.Value
+                    </FluentLabel>
+
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Icons.Regular.Size20.Person())"
+                                  Title="My account"
+                                  OnClick="GoToProfile" />
+
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Icons.Regular.Size28.ArrowExit())"
+                                  Title="Sign out"
+                                  OnClick="ConfirmSignOutAsync" />
+                </FluentStack>
+            </FluentHeader>
+
+            <FluentStack Class="main-stack" Orientation="Orientation.Horizontal">
+                <NavMenu Expanded="_navExpanded" />
+
+                <FluentBodyContent Class="body-content">
+                    <ErrorBoundary @ref="_errorBoundary">
+                        <ChildContent>
+                            <div class="content-area">
+                                @Body
+                            </div>
+                        </ChildContent>
+                        <ErrorContent Context="exception">
+                            <div class="content-area">
+                                <FluentMessageBar Title="Something went wrong" Intent="@MessageIntent.Error">
+                                    @exception.Message
+                                    <FluentButton Appearance="Appearance.Accent" Class="mt-2"
+                                                  OnClick="RecoverAsync">Reload this page</FluentButton>
+                                </FluentMessageBar>
+                            </div>
+                        </ErrorContent>
+                    </ErrorBoundary>
+                </FluentBodyContent>
+            </FluentStack>
+        </FluentLayout>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .main-stack {
+        height: calc(100vh - 50px);
+        overflow: hidden;
+        width: 100%;
+    }
+
+    .body-content {
+        overflow-y: auto;
+        height: 100%;
+        flex: 1;
+    }
+
+    .header-user {
+        color: var(--neutral-fill-inverse-rest);
+        margin-right: 4px;
+    }
+
+    @@media (min-width: 861px) {
+        .nav-toggle {
+            display: none;
+        }
+    }
+</style>
+
+@code {
+    private bool _navExpanded = true;
+    private ErrorBoundary? _errorBoundary;
+
+    private void GoToProfile() => Navigation.NavigateTo("/account");
+
+    private Task RecoverAsync()
+    {
+        _errorBoundary?.Recover();
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmSignOutAsync()
+    {
+        var dialog = await DialogService.ShowConfirmationAsync(
+            "Any unsaved work on this screen will be lost.",
+            "Sign out",
+            "Stay signed in",
+            "Sign out of Inventory Manager?");
+
+        var result = await dialog.Result;
+        if (result.Cancelled)
+        {
+            return;
+        }
+
+        await AuthProvider.LogoutAsync();
+        Navigation.NavigateTo("/login", replace: true);
+    }
+}

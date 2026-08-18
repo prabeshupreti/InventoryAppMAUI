@@ -1,0 +1,284 @@
+@implements IDialogContentComponent<ProductDto>
+@inject InventoryApiClient Api
+@inject IToastService ToastService
+
+<FluentDialogHeader ShowDismiss="true">
+    <FluentLabel Typo="Typography.PaneHeader">Move stock</FluentLabel>
+</FluentDialogHeader>
+
+<FluentDialogBody>
+    <div class="dialog-body" style="min-width:min(500px, 84vw)">
+
+        @if (_errors.Count > 0)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Error" Title="Please fix the following">
+                <ul style="margin:4px 0 0 18px; padding:0;">
+                    @foreach (var error in _errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            </FluentMessageBar>
+        }
+
+        @if (_product is null)
+        {
+            <FluentCombobox TOption="LookupItem"
+                            Label="Product *"
+                            Items="@_productOptions"
+                            OptionValue="@(i => i.Id.ToString())"
+                            OptionText="@(i => i.Name)"
+                            @bind-Value="_selectedProductId"
+                            @bind-Value:after="OnProductSelectedAsync"
+                            Placeholder="Search by name or SKU"
+                            Autocomplete="ComboboxAutocomplete.Both"
+                            Disabled="_busy"
+                            Style="width:100%" />
+        }
+        else
+        {
+            <FluentCard AreaRestricted="false">
+                <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalGap="12">
+                    <div style="flex:1; min-width:0;">
+                        <strong>@_product.Name</strong>
+                        <div class="line-row__meta">@_product.Sku &middot; @_product.Location</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="stat-card__label">On hand</div>
+                        <div style="font-size:var(--type-ramp-plus-2-font-size); font-weight:600;
+                                    color:@FormatHelpers.StockStatusColor(_product.StockStatus)">
+                            @FormatHelpers.Number(_product.CurrentStock)
+                        </div>
+                    </div>
+                </FluentStack>
+            </FluentCard>
+        }
+
+        <FluentRadioGroup @bind-Value="_operation" Label="Operation" Orientation="Orientation.Vertical"
+                          Disabled="_busy">
+            <AuthorizeView Policy="@Permissions.ReceiveStock">
+                <FluentRadio Value="@("receive")">
+                    Receive - add stock that arrived
+                </FluentRadio>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.IssueStock">
+                <FluentRadio Value="@("issue")">
+                    Remove - damage, loss or internal use
+                </FluentRadio>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.AdjustStock">
+                <FluentRadio Value="@("adjust")">
+                    Adjust - correct to a counted quantity
+                </FluentRadio>
+                <FluentRadio Value="@("transfer")">
+                    Transfer - move to another location
+                </FluentRadio>
+            </AuthorizeView>
+        </FluentRadioGroup>
+
+        @if (_operation == "adjust")
+        {
+            <FluentNumberField @bind-Value="_quantity" Label="Counted quantity *" Min="0"
+                               Disabled="_busy" Style="width:100%" />
+            @if (_product is not null)
+            {
+                <FluentLabel Typo="Typography.Body" Color="Color.Disabled">
+                    Recorded: @_product.CurrentStock &middot; difference:
+                    <strong>@FormatHelpers.Signed(_quantity - _product.CurrentStock)</strong>
+                </FluentLabel>
+            }
+        }
+        else
+        {
+            <FluentNumberField @bind-Value="_quantity" Label="Quantity *" Min="1"
+                               Disabled="_busy" Style="width:100%" />
+        }
+
+        @if (_operation == "transfer")
+        {
+            <FluentTextField @bind-Value="_toLocation" Label="Destination location *"
+                             Placeholder="Branch Store" Disabled="_busy" Style="width:100%" />
+        }
+
+        <FluentTextField @bind-Value="_reason" Label="@ReasonLabel" Required="@(_operation != "transfer")"
+                         Placeholder="@ReasonPlaceholder" Disabled="_busy" Style="width:100%" />
+
+        @if (_operation != "transfer")
+        {
+            <FluentTextField @bind-Value="_reference" Label="Reference"
+                             Placeholder="Invoice, GRN or ticket number" Disabled="_busy" Style="width:100%" />
+        }
+
+        @if (_operation == "issue" && _product is not null && _quantity > _product.CurrentStock)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Warning">
+                Only @_product.CurrentStock unit(s) are available. The server will reject a larger removal.
+            </FluentMessageBar>
+        }
+    </div>
+</FluentDialogBody>
+
+<FluentDialogFooter>
+    <FluentButton Appearance="Appearance.Neutral" Disabled="_busy" OnClick="@(() => Dialog.CancelAsync())">
+        Cancel
+    </FluentButton>
+    <FluentButton Appearance="Appearance.Accent" Loading="_busy"
+                  Disabled="@(_busy || _product is null)" OnClick="SubmitAsync">
+        Apply
+    </FluentButton>
+</FluentDialogFooter>
+
+@code {
+    [Parameter] public ProductDto Content { get; set; } = new();
+    [CascadingParameter] public FluentDialog Dialog { get; set; } = default!;
+
+    private ProductDto? _product;
+    private List<LookupItem> _productOptions = [];
+    private string? _selectedProductId;
+
+    private string _operation = "receive";
+    private int _quantity = 1;
+    private string _reason = string.Empty;
+    private string _reference = string.Empty;
+    private string _toLocation = string.Empty;
+
+    private readonly List<string> _errors = [];
+    private bool _busy;
+
+    private string ReasonLabel => _operation switch
+    {
+        "adjust" => "Adjustment reason *",
+        "transfer" => "Note",
+        _ => "Reason *"
+    };
+
+    private string ReasonPlaceholder => _operation switch
+    {
+        "receive" => "Delivery from supplier",
+        "issue" => "Damaged in storage",
+        "adjust" => "Physical count correction",
+        _ => "Optional note"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Opened from a product screen the product is fixed; opened from the stock screen
+        // the user picks one first.
+        if (Content.Id > 0)
+        {
+            _product = Content;
+        }
+        else
+        {
+            try
+            {
+                var lookup = await Api.GetProductLookupAsync(string.Empty);
+                _productOptions = lookup.Items.ToList();
+            }
+            catch (ApiException ex)
+            {
+                _errors.Add(ex.Message);
+            }
+        }
+    }
+
+    private async Task OnProductSelectedAsync()
+    {
+        if (!int.TryParse(_selectedProductId, out var id) || id <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _product = await Api.GetProductAsync(id);
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+    }
+
+    private bool Validate()
+    {
+        _errors.Clear();
+
+        if (_product is null)
+        {
+            _errors.Add("Select a product.");
+            return false;
+        }
+
+        if (_operation == "adjust")
+        {
+            if (_quantity < 0) _errors.Add("Counted quantity cannot be negative.");
+            if (_quantity == _product.CurrentStock) _errors.Add("The counted quantity already matches the recorded stock.");
+        }
+        else if (_quantity <= 0)
+        {
+            _errors.Add("Quantity must be greater than zero.");
+        }
+
+        if (_operation == "transfer" && string.IsNullOrWhiteSpace(_toLocation))
+        {
+            _errors.Add("Enter a destination location.");
+        }
+
+        if (_operation != "transfer" && string.IsNullOrWhiteSpace(_reason))
+        {
+            _errors.Add("A reason is required so the movement history stays meaningful.");
+        }
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (!Validate())
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var productId = _product!.Id;
+
+            var response = _operation switch
+            {
+                "receive" => await Api.ReceiveStockAsync(new ReceiveStockRequest
+                {
+                    ProductId = productId, Quantity = _quantity,
+                    Reason = _reason, Reference = _reference ?? string.Empty
+                }),
+                "issue" => await Api.IssueStockAsync(new IssueStockRequest
+                {
+                    ProductId = productId, Quantity = _quantity,
+                    Reason = _reason, Reference = _reference ?? string.Empty
+                }),
+                "adjust" => await Api.AdjustStockAsync(new AdjustStockRequest
+                {
+                    ProductId = productId, CountedQuantity = _quantity,
+                    Reason = _reason, Reference = _reference ?? string.Empty
+                }),
+                _ => await Api.TransferStockAsync(new TransferStockRequest
+                {
+                    ProductId = productId, Quantity = _quantity,
+                    ToLocation = _toLocation, Reason = _reason ?? string.Empty
+                })
+            };
+
+            ToastService.ShowSuccess($"Stock updated. New balance: {response.NewQuantity}.");
+            await Dialog.CloseAsync(response);
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

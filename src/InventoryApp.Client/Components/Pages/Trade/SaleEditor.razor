@@ -1,0 +1,210 @@
+@page "/sales/new"
+@attribute [Authorize(Policy = Permissions.ManageSales)]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+@inject NavigationManager Navigation
+@inject IToastService ToastService
+
+<PageTitle>New sale - Inventory Manager</PageTitle>
+
+<PageHeading Title="New sale"
+             Subtitle="Completing a sale reduces stock immediately and records a movement per line."
+             Breadcrumbs="@(new List<PageHeading.Crumb> { new("Sales", "/sales") })" />
+
+@if (_loading)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading products..." />
+}
+else if (_loadError is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_loadError" OnRetry="LoadAsync" />
+}
+else
+{
+    <DocumentEditor TLine="SaleLine"
+                    Lines="_lines"
+                    Products="_products"
+                    PartyLabel="Customer"
+                    PartyOptions="@(new List<LookupItem>())"
+                    ShowFreeTextParty="true"
+                    @bind-PartyText="_customerName"
+                    @bind-DocumentDate="_saleDate"
+                    @bind-TaxRate="_taxRate"
+                    @bind-Discount="_discount"
+                    @bind-Notes="_notes"
+                    PriceLabel="Unit price"
+                    Busy="_busy"
+                    Errors="_errors"
+                    OnAddLine="AddLine"
+                    OnRemoveLine="RemoveLine"
+                    OnProductChosen="OnProductChosenAsync">
+        <FooterActions>
+            <FluentButton Appearance="Appearance.Neutral" Disabled="_busy"
+                          OnClick="@(() => Navigation.NavigateTo("/sales"))">
+                Cancel
+            </FluentButton>
+            <FluentButton Appearance="Appearance.Accent" Loading="_busy" Disabled="_busy"
+                          OnClick="SaveAsync">
+                Complete sale
+            </FluentButton>
+        </FooterActions>
+    </DocumentEditor>
+}
+
+@code {
+    private readonly List<SaleLine> _lines = [];
+    private List<LookupItem> _products = [];
+    private readonly List<string> _errors = [];
+
+    private string? _customerName = "Walk-in customer";
+    private DateTime? _saleDate = DateTime.Today;
+    private decimal _taxRate = 13;
+    private decimal _discount;
+    private string? _notes = string.Empty;
+
+    private bool _loading = true;
+    private bool _busy;
+    private string? _loadError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+
+        try
+        {
+            var products = await Api.GetProductLookupAsync(string.Empty);
+            _products = products.Items.ToList();
+
+            if (_lines.Count == 0)
+            {
+                _lines.Add(new SaleLine());
+            }
+        }
+        catch (ApiException ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AddLine() => _lines.Add(new SaleLine());
+
+    private void RemoveLine(SaleLine line)
+    {
+        _lines.Remove(line);
+
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new SaleLine());
+        }
+    }
+
+    private async Task OnProductChosenAsync(SaleLine line)
+    {
+        if (!int.TryParse(line.ProductId, out var id) || id <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var product = await Api.GetProductAsync(id);
+            line.ProductName = $"{product.Sku} - {product.Name}";
+            line.AvailableStock = product.CurrentStock;
+
+            if (line.UnitPrice == 0)
+            {
+                line.UnitPrice = (decimal)product.UnitPrice;
+            }
+
+            if (product.CurrentStock <= 0)
+            {
+                ToastService.ShowWarning($"'{product.Name}' is out of stock.");
+            }
+        }
+        catch (ApiException ex)
+        {
+            ToastService.ShowWarning(ex.Message);
+        }
+    }
+
+    private bool Validate()
+    {
+        _errors.Clear();
+
+        var valid = _lines.Where(l => int.TryParse(l.ProductId, out var id) && id > 0).ToList();
+
+        if (valid.Count == 0)
+        {
+            _errors.Add("Add at least one product line.");
+        }
+
+        if (valid.Any(l => l.Quantity <= 0))
+        {
+            _errors.Add("Every line needs a quantity greater than zero.");
+        }
+
+        // The server is authoritative on stock, but catching it here saves a round trip.
+        foreach (var line in valid.Where(l => l.AvailableStock > 0 && l.Quantity > l.AvailableStock))
+        {
+            _errors.Add($"'{line.ProductName}' only has {line.AvailableStock} unit(s) in stock.");
+        }
+
+        if (_taxRate is < 0 or > 100)
+        {
+            _errors.Add("Tax rate must be between 0 and 100.");
+        }
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Validate())
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var request = new CreateSaleRequest
+            {
+                CustomerName = string.IsNullOrWhiteSpace(_customerName) ? "Walk-in customer" : _customerName,
+                SaleDateUtc = FormatHelpers.ToIso(_saleDate ?? DateTime.Today),
+                TaxRate = (double)_taxRate,
+                DiscountAmount = (double)_discount,
+                Notes = _notes ?? string.Empty
+            };
+
+            foreach (var line in _lines.Where(l => int.TryParse(l.ProductId, out var id) && id > 0))
+            {
+                request.Items.Add(new CreateSaleItem
+                {
+                    ProductId = int.Parse(line.ProductId!),
+                    Quantity = line.Quantity,
+                    UnitPrice = (double)line.UnitPrice
+                });
+            }
+
+            var sale = await Api.CreateSaleAsync(request);
+            ToastService.ShowSuccess($"Sale {sale.SaleNumber} completed. Stock has been updated.");
+            Navigation.NavigateTo($"/sales/{sale.Id}");
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

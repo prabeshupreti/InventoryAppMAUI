@@ -1,0 +1,180 @@
+@page "/categories"
+@attribute [Authorize(Policy = Permissions.ViewCatalog)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Categories - Inventory Manager</PageTitle>
+
+<PageHeading Title="Categories"
+             Subtitle="@($"{_pageInfo?.TotalCount ?? 0} categor(y/ies)")"
+             Breadcrumbs="@(new List<PageHeading.Crumb> { new("Catalogue", "/categories") })">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.ManageCatalog">
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Icons.Regular.Size16.Add())"
+                          OnClick="@(() => OpenEditorAsync(null))">
+                New category
+            </FluentButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeading>
+
+<div class="toolbar">
+    <div class="toolbar__grow">
+        <FluentSearch @bind-Value="_search" @bind-Value:after="ReloadFirstPageAsync"
+                      Immediate="true" ImmediateDelay="350"
+                      Label="Search" Placeholder="Category name or description" Style="width:100%" />
+    </div>
+    <FluentSwitch @bind-Value="_activeOnly" @bind-Value:after="ReloadFirstPageAsync" Label="Active only" />
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="ReloadAsync" />
+}
+else if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading categories..." />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty"
+                Title="No categories found"
+                Message="Create a category to start grouping your products." />
+}
+else
+{
+    <FluentCard>
+        <div class="grid-scroll" style="opacity:@(_loading ? "0.6" : "1");">
+            <FluentDataGrid Items="@_items.AsQueryable()" TGridItem="CategoryDto"
+                            GridTemplateColumns="1.3fr 2.2fr 0.8fr 0.8fr 1fr">
+                <PropertyColumn Property="@(c => c.Name)" Title="Name" Sortable="true" />
+                <PropertyColumn Property="@(c => c.Description)" Title="Description" />
+
+                <TemplateColumn Title="Products" Align="Align.End">
+                    <span class="numeric">@FormatHelpers.Number(context.ProductCount)</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <FluentBadge Appearance="Appearance.Neutral"
+                                 BackgroundColor="@(context.IsActive ? "var(--success)" : "var(--neutral-fill-secondary-rest)")"
+                                 Color="@(context.IsActive ? "white" : "var(--neutral-foreground-rest)")">
+                        @(context.IsActive ? "Active" : "Inactive")
+                    </FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Actions" Align="Align.End">
+                    <AuthorizeView Policy="@Permissions.ManageCatalog" Context="auth">
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Icons.Regular.Size16.Edit())"
+                                      Title="Edit category"
+                                      OnClick="@(() => OpenEditorAsync(context))" />
+
+                        <ConfirmButton Icon="@(new Icons.Regular.Size16.Delete())"
+                                       Tooltip="@(context.ProductCount > 0
+                                           ? "In use by products - deactivate instead"
+                                           : "Delete category")"
+                                       Disabled="@(context.ProductCount > 0)"
+                                       ConfirmTitle="Delete category"
+                                       ConfirmMessage="@($"Delete '{context.Name}'? This cannot be undone.")"
+                                       ConfirmLabel="Delete"
+                                       SuccessMessage="@($"'{context.Name}' was deleted.")"
+                                       Action="@(() => Api.DeleteCategoryAsync(context.Id))"
+                                       OnCompleted="ReloadAsync" />
+                    </AuthorizeView>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <Pager PageInfo="_pageInfo" CurrentPage="_page" Busy="_loading" OnPageChanged="GoToPageAsync" />
+    </FluentCard>
+}
+
+@code {
+    private readonly List<CategoryDto> _items = [];
+    private PageInfo? _pageInfo;
+    private string _search = string.Empty;
+    private bool _activeOnly;
+    private int _page = 1;
+    private bool _loading = true;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private Task ReloadFirstPageAsync()
+    {
+        _page = 1;
+        return ReloadAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        _page = page;
+        return ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var request = new ListCategoriesRequest
+            {
+                Page = new PageRequest
+                {
+                    Page = _page,
+                    PageSize = 20,
+                    Search = _search ?? string.Empty,
+                    SortBy = "name"
+                }
+            };
+
+            if (_activeOnly)
+            {
+                request.OnlyActive = true;
+            }
+
+            var response = await Api.ListCategoriesAsync(request, _cts.Token);
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _pageInfo = response.PageInfo;
+            _page = response.PageInfo.Page == 0 ? 1 : response.PageInfo.Page;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenEditorAsync(CategoryDto? category)
+    {
+        var dialog = await DialogService.ShowDialogAsync<CategoryEditor>(
+            category ?? new CategoryDto { IsActive = true },
+            new DialogParameters
+            {
+                Title = category is null ? "New category" : $"Edit {category.Name}",
+                PreventDismissOnOverlayClick = true,
+                Width = "min(520px, 94vw)"
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

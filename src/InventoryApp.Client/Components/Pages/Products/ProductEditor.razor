@@ -1,0 +1,271 @@
+@implements IDialogContentComponent<ProductDto>
+@inject InventoryApiClient Api
+@inject IToastService ToastService
+
+<FluentDialogHeader ShowDismiss="true">
+    <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8">
+        <FluentIcon Value="@(new Icons.Regular.Size24.BoxMultiple())" />
+        <FluentLabel Typo="Typography.PaneHeader">@(IsNew ? "New product" : "Edit product")</FluentLabel>
+    </FluentStack>
+</FluentDialogHeader>
+
+<FluentDialogBody>
+    <div class="dialog-body">
+        @if (_errors.Count > 0)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Error" Title="Please fix the following">
+                <ul style="margin:4px 0 0 18px; padding:0;">
+                    @foreach (var error in _errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            </FluentMessageBar>
+        }
+
+        <div class="form-grid">
+            <FluentTextField @bind-Value="_sku" Label="SKU *" Required="true"
+                             Placeholder="LAP-1001" Disabled="_busy" Style="width:100%" />
+
+            <FluentTextField @bind-Value="_barcode" Label="Barcode"
+                             Placeholder="8801234567890" Disabled="_busy" Style="width:100%" />
+
+            <div class="form-span-2">
+                <FluentTextField @bind-Value="_name" Label="Product name *" Required="true"
+                                 Placeholder="ProBook 14 Core i5" Disabled="_busy" Style="width:100%" />
+            </div>
+
+            <div class="form-span-2">
+                <FluentTextArea @bind-Value="_description" Label="Description" Rows="2"
+                                Disabled="_busy" Style="width:100%" />
+            </div>
+
+            <FluentSelect TOption="LookupItem"
+                          Label="Category *"
+                          Items="@_categories"
+                          OptionValue="@(i => i.Id.ToString())"
+                          OptionText="@(i => i.Name)"
+                          @bind-Value="_categoryId"
+                          Placeholder="Select a category"
+                          Disabled="_busy"
+                          Style="width:100%" />
+
+            <FluentSelect TOption="LookupItem"
+                          Label="Supplier *"
+                          Items="@_suppliers"
+                          OptionValue="@(i => i.Id.ToString())"
+                          OptionText="@(i => i.Name)"
+                          @bind-Value="_supplierId"
+                          Placeholder="Select a supplier"
+                          Disabled="_busy"
+                          Style="width:100%" />
+
+            <FluentNumberField @bind-Value="_costPrice" Label="Cost price *" Min="0" Step="0.01"
+                               Disabled="_busy" Style="width:100%" />
+
+            <FluentNumberField @bind-Value="_unitPrice" Label="Selling price *" Min="0" Step="0.01"
+                               Disabled="_busy" Style="width:100%" />
+
+            @if (IsNew)
+            {
+                <FluentNumberField @bind-Value="_openingStock" Label="Opening stock" Min="0"
+                                   Disabled="_busy" Style="width:100%" />
+            }
+            else
+            {
+                <FluentTextField Value="@_currentStockDisplay" Label="Current stock" ReadOnly="true"
+                                 Style="width:100%" />
+            }
+
+            <FluentTextField @bind-Value="_unitOfMeasure" Label="Unit of measure"
+                             Placeholder="pcs" Disabled="_busy" Style="width:100%" />
+
+            <FluentNumberField @bind-Value="_minimumStock" Label="Minimum stock level" Min="0"
+                               Disabled="_busy" Style="width:100%" />
+
+            <FluentNumberField @bind-Value="_maximumStock" Label="Maximum stock level" Min="0"
+                               Disabled="_busy" Style="width:100%" />
+
+            <FluentTextField @bind-Value="_location" Label="Storage location"
+                             Placeholder="Main Warehouse" Disabled="_busy" Style="width:100%" />
+
+            <FluentTextField @bind-Value="_imageUrl" Label="Image URL"
+                             Placeholder="https://..." Disabled="_busy" Style="width:100%" />
+
+            <div class="form-span-2">
+                <FluentSwitch @bind-Value="_isActive" Label="Active"
+                              Disabled="_busy" />
+            </div>
+        </div>
+
+        @if (!IsNew)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Info" Title="Stock is managed separately">
+                Quantities change only through stock movements, so every change stays auditable.
+                Use the Stock screen to receive, remove or adjust this product.
+            </FluentMessageBar>
+        }
+    </div>
+</FluentDialogBody>
+
+<FluentDialogFooter>
+    <FluentButton Appearance="Appearance.Neutral" Disabled="_busy" OnClick="CancelAsync">Cancel</FluentButton>
+    <FluentButton Appearance="Appearance.Accent" Loading="_busy" Disabled="_busy" OnClick="SaveAsync">
+        @(IsNew ? "Create product" : "Save changes")
+    </FluentButton>
+</FluentDialogFooter>
+
+@code {
+    [Parameter] public ProductDto Content { get; set; } = new();
+    [CascadingParameter] public FluentDialog Dialog { get; set; } = default!;
+
+    private bool IsNew => Content.Id == 0;
+
+    private List<LookupItem> _categories = [];
+    private List<LookupItem> _suppliers = [];
+    private readonly List<string> _errors = [];
+    private bool _busy;
+
+    private string _sku = string.Empty;
+    private string _name = string.Empty;
+    private string _description = string.Empty;
+    private string _barcode = string.Empty;
+    private string _unitOfMeasure = "pcs";
+    private string _location = "Main Warehouse";
+    private string _imageUrl = string.Empty;
+    private string? _categoryId;
+    private string? _supplierId;
+    private decimal _costPrice;
+    private decimal _unitPrice;
+    private int _openingStock;
+    private int _minimumStock;
+    private int _maximumStock;
+    private bool _isActive = true;
+    private string _currentStockDisplay = "0";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sku = Content.Sku;
+        _name = Content.Name;
+        _description = Content.Description;
+        _barcode = Content.Barcode;
+        _unitOfMeasure = string.IsNullOrWhiteSpace(Content.UnitOfMeasure) ? "pcs" : Content.UnitOfMeasure;
+        _location = string.IsNullOrWhiteSpace(Content.Location) ? "Main Warehouse" : Content.Location;
+        _imageUrl = Content.ImageUrl;
+        _costPrice = (decimal)Content.CostPrice;
+        _unitPrice = (decimal)Content.UnitPrice;
+        _minimumStock = Content.MinimumStock;
+        _maximumStock = Content.MaximumStock;
+        _isActive = IsNew || Content.IsActive;
+        _currentStockDisplay = $"{Content.CurrentStock} {_unitOfMeasure}";
+
+        if (Content.CategoryId > 0) _categoryId = Content.CategoryId.ToString();
+        if (Content.SupplierId > 0) _supplierId = Content.SupplierId.ToString();
+
+        try
+        {
+            var categories = await Api.GetCategoryLookupAsync();
+            var suppliers = await Api.GetSupplierLookupAsync();
+            _categories = categories.Items.ToList();
+            _suppliers = suppliers.Items.ToList();
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+    }
+
+    /// <summary>Client-side checks give instant feedback; the server validates again authoritatively.</summary>
+    private bool Validate()
+    {
+        _errors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_sku)) _errors.Add("SKU is required.");
+        if (string.IsNullOrWhiteSpace(_name)) _errors.Add("Product name is required.");
+        if (!int.TryParse(_categoryId, out var cat) || cat <= 0) _errors.Add("Select a category.");
+        if (!int.TryParse(_supplierId, out var sup) || sup <= 0) _errors.Add("Select a supplier.");
+        if (_costPrice < 0) _errors.Add("Cost price cannot be negative.");
+        if (_unitPrice < 0) _errors.Add("Selling price cannot be negative.");
+        if (_minimumStock < 0) _errors.Add("Minimum stock cannot be negative.");
+        if (_maximumStock > 0 && _maximumStock < _minimumStock)
+            _errors.Add("Maximum stock cannot be lower than minimum stock.");
+        if (IsNew && _openingStock < 0) _errors.Add("Opening stock cannot be negative.");
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Validate())
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var categoryId = int.Parse(_categoryId!);
+            var supplierId = int.Parse(_supplierId!);
+
+            if (IsNew)
+            {
+                var created = await Api.CreateProductAsync(new CreateProductRequest
+                {
+                    Sku = _sku.Trim(),
+                    Name = _name.Trim(),
+                    Description = _description ?? string.Empty,
+                    CategoryId = categoryId,
+                    SupplierId = supplierId,
+                    CostPrice = (double)_costPrice,
+                    UnitPrice = (double)_unitPrice,
+                    OpeningStock = _openingStock,
+                    MinimumStock = _minimumStock,
+                    MaximumStock = _maximumStock,
+                    UnitOfMeasure = _unitOfMeasure ?? "pcs",
+                    Barcode = _barcode ?? string.Empty,
+                    ImageUrl = _imageUrl ?? string.Empty,
+                    Location = _location ?? string.Empty,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"'{created.Name}' was created.");
+                await Dialog.CloseAsync(created);
+            }
+            else
+            {
+                var updated = await Api.UpdateProductAsync(new UpdateProductRequest
+                {
+                    Id = Content.Id,
+                    Sku = _sku.Trim(),
+                    Name = _name.Trim(),
+                    Description = _description ?? string.Empty,
+                    CategoryId = categoryId,
+                    SupplierId = supplierId,
+                    CostPrice = (double)_costPrice,
+                    UnitPrice = (double)_unitPrice,
+                    MinimumStock = _minimumStock,
+                    MaximumStock = _maximumStock,
+                    UnitOfMeasure = _unitOfMeasure ?? "pcs",
+                    Barcode = _barcode ?? string.Empty,
+                    ImageUrl = _imageUrl ?? string.Empty,
+                    Location = _location ?? string.Empty,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"'{updated.Name}' was updated.");
+                await Dialog.CloseAsync(updated);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task CancelAsync() => Dialog.CancelAsync();
+}

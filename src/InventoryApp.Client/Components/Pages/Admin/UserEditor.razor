@@ -1,0 +1,183 @@
+@implements IDialogContentComponent<UserDto>
+@inject InventoryApiClient Api
+@inject IToastService ToastService
+
+<FluentDialogHeader ShowDismiss="true">
+    <FluentLabel Typo="Typography.PaneHeader">@(IsNew ? "New user" : "Edit user")</FluentLabel>
+</FluentDialogHeader>
+
+<FluentDialogBody>
+    <div class="dialog-body" style="min-width:min(500px, 84vw)">
+        @if (_errors.Count > 0)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Error" Title="Please fix the following">
+                <ul style="margin:4px 0 0 18px; padding:0;">
+                    @foreach (var error in _errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            </FluentMessageBar>
+        }
+
+        <FluentTextField @bind-Value="_username" Label="Username *" Required="true"
+                         ReadOnly="@(!IsNew)" Disabled="_busy" Style="width:100%" />
+
+        <FluentTextField @bind-Value="_fullName" Label="Full name *" Required="true"
+                         Disabled="_busy" Style="width:100%" />
+
+        <FluentTextField @bind-Value="_email" Label="Email *" TextFieldType="TextFieldType.Email"
+                         Required="true" Disabled="_busy" Style="width:100%" />
+
+        <FluentSelect TOption="RoleOption"
+                      Label="Role *"
+                      Items="@RoleOptions"
+                      OptionValue="@(r => r.Value.ToString())"
+                      OptionText="@(r => r.Label)"
+                      @bind-Value="_roleValue"
+                      Disabled="_busy"
+                      Style="width:100%" />
+
+        <FluentTextField @bind-Value="_password"
+                         Label="@(IsNew ? "Password *" : "New password (leave blank to keep current)")"
+                         TextFieldType="TextFieldType.Password"
+                         Required="@IsNew" Disabled="_busy" Style="width:100%" />
+
+        <FluentSwitch @bind-Value="_isActive" Label="Active" Disabled="_busy" />
+
+        <FluentMessageBar Intent="@MessageIntent.Info">
+            @RoleDescription
+        </FluentMessageBar>
+    </div>
+</FluentDialogBody>
+
+<FluentDialogFooter>
+    <FluentButton Appearance="Appearance.Neutral" Disabled="_busy" OnClick="@(() => Dialog.CancelAsync())">
+        Cancel
+    </FluentButton>
+    <FluentButton Appearance="Appearance.Accent" Loading="_busy" Disabled="_busy" OnClick="SaveAsync">
+        @(IsNew ? "Create user" : "Save changes")
+    </FluentButton>
+</FluentDialogFooter>
+
+@code {
+    [Parameter] public UserDto Content { get; set; } = new();
+    [CascadingParameter] public FluentDialog Dialog { get; set; } = default!;
+
+    public record RoleOption(UserRole Value, string Label);
+
+    private static readonly List<RoleOption> RoleOptions =
+    [
+        new(UserRole.Administrator, "Administrator"),
+        new(UserRole.InventoryManager, "Inventory manager"),
+        new(UserRole.Staff, "Staff")
+    ];
+
+    private bool IsNew => Content.Id == 0;
+    private readonly List<string> _errors = [];
+    private bool _busy;
+
+    private string _username = string.Empty;
+    private string _fullName = string.Empty;
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private string _roleValue = ((int)UserRole.Staff).ToString();
+    private bool _isActive = true;
+
+    private UserRole SelectedRole =>
+        int.TryParse(_roleValue, out var value) ? (UserRole)value : UserRole.Staff;
+
+    private string RoleDescription => SelectedRole switch
+    {
+        UserRole.Administrator => "Full access, including user management and deleting products.",
+        UserRole.InventoryManager => "Manages products, catalogue, stock movements and purchase orders.",
+        _ => "Can view inventory and record sales, but cannot change stock or the catalogue."
+    };
+
+    protected override void OnInitialized()
+    {
+        _username = Content.Username;
+        _fullName = Content.FullName;
+        _email = Content.Email;
+        _isActive = IsNew || Content.IsActive;
+        _roleValue = ((int)(Content.Role == UserRole.Unspecified ? UserRole.Staff : Content.Role)).ToString();
+    }
+
+    private bool Validate()
+    {
+        _errors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_username)) _errors.Add("Username is required.");
+        if (string.IsNullOrWhiteSpace(_fullName)) _errors.Add("Full name is required.");
+        if (string.IsNullOrWhiteSpace(_email) || !_email.Contains('@')) _errors.Add("A valid email is required.");
+
+        if (IsNew && (string.IsNullOrWhiteSpace(_password) || _password.Length < 6))
+        {
+            _errors.Add("Password must be at least 6 characters.");
+        }
+
+        if (!IsNew && !string.IsNullOrWhiteSpace(_password) && _password.Length < 6)
+        {
+            _errors.Add("New password must be at least 6 characters.");
+        }
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Validate())
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            if (IsNew)
+            {
+                var created = await Api.CreateUserAsync(new CreateUserRequest
+                {
+                    Username = _username.Trim(),
+                    FullName = _fullName.Trim(),
+                    Email = _email.Trim(),
+                    Password = _password,
+                    Role = SelectedRole,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"User '{created.Username}' created.");
+                await Dialog.CloseAsync(created);
+            }
+            else
+            {
+                var request = new UpdateUserRequest
+                {
+                    Id = Content.Id,
+                    FullName = _fullName.Trim(),
+                    Email = _email.Trim(),
+                    Role = SelectedRole,
+                    IsActive = _isActive
+                };
+
+                if (!string.IsNullOrWhiteSpace(_password))
+                {
+                    request.NewPassword = _password;
+                }
+
+                var updated = await Api.UpdateUserAsync(request);
+                ToastService.ShowSuccess($"User '{updated.Username}' updated.");
+                await Dialog.CloseAsync(updated);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

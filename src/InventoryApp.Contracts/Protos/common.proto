@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package inventory.common;
+option csharp_namespace = "InventoryApp.Contracts.Common";
+
+// Shared building blocks used by every service contract.
+
+message Empty {}
+
+message IdRequest {
+  int32 id = 1;
+}
+
+message OperationResult {
+  bool success = 1;
+  string message = 2;
+}
+
+// Standard server-side paging / searching / sorting envelope.
+message PageRequest {
+  int32 page = 1;        // 1-based. 0 is treated as 1.
+  int32 page_size = 2;   // 0 is treated as the server default (25). Max 200.
+  string search = 3;     // free text search, may be empty
+  string sort_by = 4;    // field name, may be empty
+  bool sort_descending = 5;
+}
+
+message PageInfo {
+  int32 page = 1;
+  int32 page_size = 2;
+  int32 total_count = 3;
+  int32 total_pages = 4;
+}
+
+// Inclusive date range filter. Unset bounds mean "unbounded".
+message DateRange {
+  optional string from_utc = 1; // ISO-8601, e.g. 2025-01-01T00:00:00Z
+  optional string to_utc = 2;
+}
+
+message LookupItem {
+  int32 id = 1;
+  string name = 2;
+}
+
+message LookupList {
+  repeated LookupItem items = 1;
+}
+
+message CsvExport {
+  string file_name = 1;
+  string content = 2;
+  int32 row_count = 3;
+}

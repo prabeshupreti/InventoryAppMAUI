@@ -1,0 +1,200 @@
+@page "/purchases"
+@attribute [Authorize(Policy = Permissions.ViewPurchases)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Purchases - Inventory Manager</PageTitle>
+
+<PageHeading Title="Purchase orders"
+             Subtitle="@($"{_pageInfo?.TotalCount ?? 0} order(s)")">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.ManagePurchases">
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Icons.Regular.Size16.Add())"
+                          OnClick="@(() => Navigation.NavigateTo("/purchases/new"))">
+                New order
+            </FluentButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeading>
+
+<div class="toolbar">
+    <div class="toolbar__grow">
+        <FluentSearch @bind-Value="_search" @bind-Value:after="ReloadFirstPageAsync"
+                      Immediate="true" ImmediateDelay="350"
+                      Label="Search" Placeholder="Order number or supplier" Style="width:100%" />
+    </div>
+
+    <FluentSelect TOption="string" Label="Status" Items="@_statusOptions"
+                  OptionValue="@(s => s)" OptionText="@(s => s)"
+                  @bind-Value="_statusFilter" @bind-Value:after="ReloadFirstPageAsync" Width="160px" />
+
+    <FluentSelect TOption="LookupItem" Label="Supplier" Items="@_suppliers"
+                  OptionValue="@(i => i.Id.ToString())" OptionText="@(i => i.Name)"
+                  @bind-Value="_supplierFilter" @bind-Value:after="ReloadFirstPageAsync"
+                  Placeholder="All suppliers" Width="200px" />
+
+    <FluentDatePicker @bind-Value="_fromDate" @bind-Value:after="ReloadFirstPageAsync"
+                      Label="From" Style="width:150px" />
+    <FluentDatePicker @bind-Value="_toDate" @bind-Value:after="ReloadFirstPageAsync"
+                      Label="To" Style="width:150px" />
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="ReloadAsync" />
+}
+else if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading purchase orders..." />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty"
+                Title="No purchase orders"
+                Message="Create an order to record what you are buying from suppliers." />
+}
+else
+{
+    <FluentCard>
+        <div class="grid-scroll" style="opacity:@(_loading ? "0.6" : "1");">
+            <FluentDataGrid Items="@_items.AsQueryable()" TGridItem="PurchaseOrderDto"
+                            GridTemplateColumns="1.1fr 1.7fr 1fr 0.9fr 0.6fr 1fr 0.8fr">
+                <TemplateColumn Title="Order">
+                    <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/purchases/{context.Id}")">
+                        @context.OrderNumber
+                    </FluentAnchor>
+                </TemplateColumn>
+
+                <PropertyColumn Property="@(o => o.SupplierName)" Title="Supplier" Sortable="true" />
+
+                <TemplateColumn Title="Order date">@FormatHelpers.Date(context.OrderDateUtc)</TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <FluentBadge Appearance="Appearance.Neutral"
+                                 BackgroundColor="@FormatHelpers.PurchaseStatusColor(context.Status)"
+                                 Color="white">
+                        @FormatHelpers.PurchaseStatusLabel(context.Status)
+                    </FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Lines" Align="Align.End">
+                    <span class="numeric">@context.Items.Count</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Total" Align="Align.End" Sortable="true">
+                    <span class="numeric">@FormatHelpers.Money(context.Total)</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Actions" Align="Align.End">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Icons.Regular.Size16.Eye())"
+                                  Title="Open order"
+                                  OnClick="@(() => Navigation.NavigateTo($"/purchases/{context.Id}"))" />
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <Pager PageInfo="_pageInfo" CurrentPage="_page" Busy="_loading" OnPageChanged="GoToPageAsync" />
+    </FluentCard>
+}
+
+@code {
+    private readonly List<PurchaseOrderDto> _items = [];
+    private List<LookupItem> _suppliers = [];
+    private PageInfo? _pageInfo;
+
+    private readonly string[] _statusOptions = ["All", "Draft", "Ordered", "Received", "Cancelled"];
+    private string _search = string.Empty;
+    private string _statusFilter = "All";
+    private string? _supplierFilter;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+
+    private int _page = 1;
+    private bool _loading = true;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var suppliers = await Api.GetSupplierLookupAsync();
+            _suppliers = suppliers.Items.ToList();
+        }
+        catch (ApiException) { }
+
+        await ReloadAsync();
+    }
+
+    private Task ReloadFirstPageAsync()
+    {
+        _page = 1;
+        return ReloadAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        _page = page;
+        return ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var request = new ListPurchasesRequest
+            {
+                Page = new PageRequest { Page = _page, PageSize = 20, Search = _search ?? string.Empty },
+                DateRange = new DateRange()
+            };
+
+            if (_fromDate.HasValue) request.DateRange.FromUtc = FormatHelpers.ToIso(_fromDate.Value.Date);
+            if (_toDate.HasValue) request.DateRange.ToUtc = FormatHelpers.ToIso(_toDate.Value.Date);
+
+            if (int.TryParse(_supplierFilter, out var supplierId) && supplierId > 0)
+            {
+                request.SupplierId = supplierId;
+            }
+
+            var status = _statusFilter switch
+            {
+                "Draft" => PurchaseStatus.Draft,
+                "Ordered" => PurchaseStatus.Ordered,
+                "Received" => PurchaseStatus.Received,
+                "Cancelled" => PurchaseStatus.Cancelled,
+                _ => PurchaseStatus.Unspecified
+            };
+
+            if (status != PurchaseStatus.Unspecified)
+            {
+                request.Status = status;
+            }
+
+            var response = await Api.ListPurchasesAsync(request, _cts.Token);
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _pageInfo = response.PageInfo;
+            _page = response.PageInfo.Page == 0 ? 1 : response.PageInfo.Page;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

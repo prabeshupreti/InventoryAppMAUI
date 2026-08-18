@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?xaml-comp compile="true" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- The Blazor UI is themed by Fluent UI. These values only affect the native
+         MAUI chrome around the BlazorWebView (window background, splash). -->
+
+    <Color x:Key="Primary">#0F6CBD</Color>
+    <Color x:Key="PrimaryDark">#115EA3</Color>
+    <Color x:Key="Secondary">#616161</Color>
+    <Color x:Key="White">White</Color>
+    <Color x:Key="Black">Black</Color>
+
+    <Color x:Key="PageBackgroundColor">#FFFFFF</Color>
+    <Color x:Key="PageBackgroundColorDark">#1B1A19</Color>
+
+    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Primary}" />
+    <SolidColorBrush x:Key="WhiteBrush" Color="{StaticResource White}" />
+    <SolidColorBrush x:Key="BlackBrush" Color="{StaticResource Black}" />
+
+</ResourceDictionary>

@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package inventory.trade;
+option csharp_namespace = "InventoryApp.Contracts.Trade";
+
+import "common.proto";
+
+service SalesService {
+  rpc ListSales (ListSalesRequest) returns (ListSalesResponse);
+  rpc GetSale (inventory.common.IdRequest) returns (SaleDto);
+  rpc CreateSale (CreateSaleRequest) returns (SaleDto);
+  rpc CancelSale (inventory.common.IdRequest) returns (SaleDto);
+}
+
+enum SaleStatus {
+  SALE_STATUS_UNSPECIFIED = 0;
+  SALE_STATUS_COMPLETED = 1;
+  SALE_STATUS_CANCELLED = 2;
+}
+
+message SaleItemDto {
+  int32 id = 1;
+  int32 product_id = 2;
+  string product_sku = 3;
+  string product_name = 4;
+  int32 quantity = 5;
+  double unit_price = 6;
+  double line_total = 7;
+}
+
+message SaleDto {
+  int32 id = 1;
+  string sale_number = 2;
+  string customer_name = 3;
+  string sale_date_utc = 4;
+  SaleStatus status = 5;
+  double subtotal = 6;
+  double tax_rate = 7;
+  double tax_amount = 8;
+  double discount_amount = 9;
+  double total = 10;
+  string notes = 11;
+  string created_by = 12;
+  repeated SaleItemDto items = 13;
+}
+
+message ListSalesRequest {
+  inventory.common.PageRequest page = 1;
+  optional SaleStatus status = 2;
+  inventory.common.DateRange date_range = 3;
+}
+
+message ListSalesResponse {
+  repeated SaleDto items = 1;
+  inventory.common.PageInfo page_info = 2;
+}
+
+message CreateSaleItem {
+  int32 product_id = 1;
+  int32 quantity = 2;
+  double unit_price = 3;
+}
+
+message CreateSaleRequest {
+  string customer_name = 1;
+  string sale_date_utc = 2;
+  double tax_rate = 3;
+  double discount_amount = 4;
+  string notes = 5;
+  repeated CreateSaleItem items = 6;
+}

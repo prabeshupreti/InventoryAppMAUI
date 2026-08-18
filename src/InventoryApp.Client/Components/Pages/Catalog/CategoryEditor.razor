@@ -1,0 +1,118 @@
+@implements IDialogContentComponent<CategoryDto>
+@inject InventoryApiClient Api
+@inject IToastService ToastService
+
+<FluentDialogHeader ShowDismiss="true">
+    <FluentLabel Typo="Typography.PaneHeader">@(IsNew ? "New category" : "Edit category")</FluentLabel>
+</FluentDialogHeader>
+
+<FluentDialogBody>
+    <div class="dialog-body" style="min-width:min(460px, 82vw)">
+        @if (_errors.Count > 0)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Error" Title="Please fix the following">
+                <ul style="margin:4px 0 0 18px; padding:0;">
+                    @foreach (var error in _errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            </FluentMessageBar>
+        }
+
+        <FluentTextField @bind-Value="_name" Label="Name *" Required="true"
+                         Placeholder="Peripherals" Disabled="_busy" Style="width:100%" />
+
+        <FluentTextArea @bind-Value="_description" Label="Description" Rows="3"
+                        Disabled="_busy" Style="width:100%" />
+
+        <FluentSwitch @bind-Value="_isActive" Label="Active" Disabled="_busy" />
+
+        @if (!IsNew && Content.ProductCount > 0)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Info">
+                @Content.ProductCount product(s) use this category. It cannot be deleted or
+                deactivated until they are moved elsewhere.
+            </FluentMessageBar>
+        }
+    </div>
+</FluentDialogBody>
+
+<FluentDialogFooter>
+    <FluentButton Appearance="Appearance.Neutral" Disabled="_busy" OnClick="@(() => Dialog.CancelAsync())">
+        Cancel
+    </FluentButton>
+    <FluentButton Appearance="Appearance.Accent" Loading="_busy" Disabled="_busy" OnClick="SaveAsync">
+        @(IsNew ? "Create" : "Save changes")
+    </FluentButton>
+</FluentDialogFooter>
+
+@code {
+    [Parameter] public CategoryDto Content { get; set; } = new();
+    [CascadingParameter] public FluentDialog Dialog { get; set; } = default!;
+
+    private bool IsNew => Content.Id == 0;
+    private readonly List<string> _errors = [];
+    private bool _busy;
+
+    private string _name = string.Empty;
+    private string _description = string.Empty;
+    private bool _isActive = true;
+
+    protected override void OnInitialized()
+    {
+        _name = Content.Name;
+        _description = Content.Description;
+        _isActive = IsNew || Content.IsActive;
+    }
+
+    private async Task SaveAsync()
+    {
+        _errors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            _errors.Add("Category name is required.");
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            if (IsNew)
+            {
+                var created = await Api.CreateCategoryAsync(new CreateCategoryRequest
+                {
+                    Name = _name.Trim(),
+                    Description = _description ?? string.Empty,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"'{created.Name}' was created.");
+                await Dialog.CloseAsync(created);
+            }
+            else
+            {
+                var updated = await Api.UpdateCategoryAsync(new UpdateCategoryRequest
+                {
+                    Id = Content.Id,
+                    Name = _name.Trim(),
+                    Description = _description ?? string.Empty,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"'{updated.Name}' was updated.");
+                await Dialog.CloseAsync(updated);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,43 @@
+@* Loading / empty / error states, so every screen behaves the same way. *@
+
+@if (State == BlockState.Loading)
+{
+    <div class="state-block">
+        <FluentProgressRing />
+        <span>@(Message ?? "Loading...")</span>
+    </div>
+}
+else if (State == BlockState.Empty)
+{
+    <div class="state-block">
+        <FluentIcon Value="@(new Icons.Regular.Size32.DocumentSearch())" Color="Color.Disabled" />
+        <span class="state-block__title">@(Title ?? "Nothing here yet")</span>
+        <span>@(Message ?? "Try adjusting your filters, or add the first record.")</span>
+        @Actions
+    </div>
+}
+else if (State == BlockState.Error)
+{
+    <div class="state-block">
+        <FluentIcon Value="@(new Icons.Regular.Size20.ErrorCircle())" Color="Color.Error" />
+        <span class="state-block__title">@(Title ?? "Could not load this data")</span>
+        <span>@Message</span>
+        @if (OnRetry.HasDelegate)
+        {
+            <FluentButton Appearance="Appearance.Accent" OnClick="@(() => OnRetry.InvokeAsync())">
+                Try again
+            </FluentButton>
+        }
+        @Actions
+    </div>
+}
+
+@code {
+    public enum BlockState { None, Loading, Empty, Error }
+
+    [Parameter] public BlockState State { get; set; } = BlockState.None;
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+}

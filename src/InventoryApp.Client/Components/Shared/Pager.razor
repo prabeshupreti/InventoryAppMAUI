@@ -1,0 +1,26 @@
+@* Shared paging footer so every list screen behaves identically. *@
+
+<FluentStack Class="mt-2" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="12">
+    <FluentLabel Typo="Typography.Body" Color="Color.Disabled">
+        Page @(PageInfo?.Page ?? 1) of @(Math.Max(PageInfo?.TotalPages ?? 1, 1))
+        &middot; @(PageInfo?.TotalCount ?? 0) total
+    </FluentLabel>
+    <FluentSpacer />
+    <FluentButton IconStart="@(new Icons.Regular.Size16.ChevronLeft())"
+                  Disabled="@(CurrentPage <= 1 || Busy)"
+                  OnClick="@(() => OnPageChanged.InvokeAsync(CurrentPage - 1))">
+        Previous
+    </FluentButton>
+    <FluentButton IconEnd="@(new Icons.Regular.Size16.ChevronRight())"
+                  Disabled="@(PageInfo is null || CurrentPage >= PageInfo.TotalPages || Busy)"
+                  OnClick="@(() => OnPageChanged.InvokeAsync(CurrentPage + 1))">
+        Next
+    </FluentButton>
+</FluentStack>
+
+@code {
+    [Parameter] public PageInfo? PageInfo { get; set; }
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+}

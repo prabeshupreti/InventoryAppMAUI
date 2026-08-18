@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package inventory.catalog;
+option csharp_namespace = "InventoryApp.Contracts.Catalog";
+
+import "common.proto";
+
+service CategoryService {
+  rpc ListCategories (ListCategoriesRequest) returns (ListCategoriesResponse);
+  rpc GetCategory (inventory.common.IdRequest) returns (CategoryDto);
+  rpc CreateCategory (CreateCategoryRequest) returns (CategoryDto);
+  rpc UpdateCategory (UpdateCategoryRequest) returns (CategoryDto);
+  rpc DeleteCategory (inventory.common.IdRequest) returns (inventory.common.OperationResult);
+  rpc GetCategoryLookup (inventory.common.Empty) returns (inventory.common.LookupList);
+}
+
+message CategoryDto {
+  int32 id = 1;
+  string name = 2;
+  string description = 3;
+  bool is_active = 4;
+  int32 product_count = 5;
+  string created_at_utc = 6;
+  string updated_at_utc = 7;
+}
+
+message ListCategoriesRequest {
+  inventory.common.PageRequest page = 1;
+  optional bool only_active = 2;
+}
+
+message ListCategoriesResponse {
+  repeated CategoryDto items = 1;
+  inventory.common.PageInfo page_info = 2;
+}
+
+message CreateCategoryRequest {
+  string name = 1;
+  string description = 2;
+  bool is_active = 3;
+}
+
+message UpdateCategoryRequest {
+  int32 id = 1;
+  string name = 2;
+  string description = 3;
+  bool is_active = 4;
+}

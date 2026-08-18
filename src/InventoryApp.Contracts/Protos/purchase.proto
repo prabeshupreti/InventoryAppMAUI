@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package inventory.trade;
+option csharp_namespace = "InventoryApp.Contracts.Trade";
+
+import "common.proto";
+
+service PurchaseService {
+  rpc ListPurchases (ListPurchasesRequest) returns (ListPurchasesResponse);
+  rpc GetPurchase (inventory.common.IdRequest) returns (PurchaseOrderDto);
+  rpc CreatePurchase (SavePurchaseRequest) returns (PurchaseOrderDto);
+  rpc UpdatePurchase (SavePurchaseRequest) returns (PurchaseOrderDto);   // draft only
+  rpc SubmitPurchase (inventory.common.IdRequest) returns (PurchaseOrderDto);
+  rpc ReceivePurchase (ReceivePurchaseRequest) returns (PurchaseOrderDto);
+  rpc CancelPurchase (inventory.common.IdRequest) returns (PurchaseOrderDto);
+  rpc DeletePurchase (inventory.common.IdRequest) returns (inventory.common.OperationResult);
+}
+
+enum PurchaseStatus {
+  PURCHASE_STATUS_UNSPECIFIED = 0;
+  PURCHASE_STATUS_DRAFT = 1;
+  PURCHASE_STATUS_ORDERED = 2;
+  PURCHASE_STATUS_RECEIVED = 3;
+  PURCHASE_STATUS_CANCELLED = 4;
+}
+
+message PurchaseItemDto {
+  int32 id = 1;
+  int32 product_id = 2;
+  string product_sku = 3;
+  string product_name = 4;
+  int32 quantity = 5;
+  double unit_cost = 6;
+  double line_total = 7;
+}
+
+message PurchaseOrderDto {
+  int32 id = 1;
+  string order_number = 2;
+  int32 supplier_id = 3;
+  string supplier_name = 4;
+  string order_date_utc = 5;
+  optional string expected_date_utc = 6;
+  optional string received_date_utc = 7;
+  PurchaseStatus status = 8;
+  double subtotal = 9;
+  double tax_rate = 10;         // percent, e.g. 13 for 13%
+  double tax_amount = 11;
+  double discount_amount = 12;
+  double total = 13;
+  string notes = 14;
+  string created_by = 15;
+  string created_at_utc = 16;
+  repeated PurchaseItemDto items = 17;
+}
+
+message ListPurchasesRequest {
+  inventory.common.PageRequest page = 1;
+  optional int32 supplier_id = 2;
+  optional PurchaseStatus status = 3;
+  inventory.common.DateRange date_range = 4;
+}
+
+message ListPurchasesResponse {
+  repeated PurchaseOrderDto items = 1;
+  inventory.common.PageInfo page_info = 2;
+}
+
+message SavePurchaseItem {
+  int32 product_id = 1;
+  int32 quantity = 2;
+  double unit_cost = 3;
+}
+
+message SavePurchaseRequest {
+  optional int32 id = 1;             // required for Update, ignored on Create
+  int32 supplier_id = 2;
+  string order_date_utc = 3;
+  optional string expected_date_utc = 4;
+  double tax_rate = 5;
+  double discount_amount = 6;
+  string notes = 7;
+  repeated SavePurchaseItem items = 8;
+}
+
+message ReceivePurchaseRequest {
+  int32 id = 1;
+  string reference = 2;   // e.g. supplier invoice / GRN number
+}

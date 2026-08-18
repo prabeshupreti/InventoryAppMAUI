@@ -1,0 +1,180 @@
+@page "/account"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+@inject InventoryAuthStateProvider AuthProvider
+@inject NavigationManager Navigation
+@inject IToastService ToastService
+
+<PageTitle>My account - Inventory Manager</PageTitle>
+
+<PageHeading Title="My account" Subtitle="Your profile, permissions and password" />
+
+@if (_loading)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading your profile..." />
+}
+else if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_user is not null)
+{
+    <div class="panel-grid">
+        <FluentCard>
+            <h2 class="panel-title">Profile</h2>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                <DetailRow Label="Username" Value="@_user.Username" />
+                <DetailRow Label="Full name" Value="@_user.FullName" />
+                <DetailRow Label="Email" Value="@_user.Email" />
+                <DetailRow Label="Role" Value="@RoleLabel(_user.Role)" />
+                <DetailRow Label="Account created" Value="@FormatHelpers.Date(_user.CreatedAtUtc)" />
+                <DetailRow Label="Last sign-in"
+                           Value="@(_user.HasLastLoginAtUtc ? FormatHelpers.DateTimeShort(_user.LastLoginAtUtc) : "This is your first session")" />
+            </FluentStack>
+
+            <FluentButton Class="mt-2" IconStart="@(new Icons.Regular.Size16.ArrowExit())"
+                          OnClick="SignOutAsync">
+                Sign out
+            </FluentButton>
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Change password</h2>
+
+            @if (_passwordErrors.Count > 0)
+            {
+                <FluentMessageBar Intent="@MessageIntent.Error" Class="mb-2">
+                    <ul style="margin:4px 0 0 18px; padding:0;">
+                        @foreach (var error in _passwordErrors)
+                        {
+                            <li>@error</li>
+                        }
+                    </ul>
+                </FluentMessageBar>
+            }
+
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="12">
+                <FluentTextField @bind-Value="_currentPassword" Label="Current password"
+                                 TextFieldType="TextFieldType.Password" Disabled="_saving" Style="width:100%" />
+                <FluentTextField @bind-Value="_newPassword" Label="New password"
+                                 TextFieldType="TextFieldType.Password" Disabled="_saving" Style="width:100%" />
+                <FluentTextField @bind-Value="_confirmPassword" Label="Confirm new password"
+                                 TextFieldType="TextFieldType.Password" Disabled="_saving" Style="width:100%" />
+
+                <FluentButton Appearance="Appearance.Accent" Loading="_saving" Disabled="_saving"
+                              OnClick="ChangePasswordAsync">
+                    Update password
+                </FluentButton>
+            </FluentStack>
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Your permissions</h2>
+            <FluentLabel Color="Color.Disabled" Typo="Typography.Body" Class="mb-2">
+                Granted by your role. Screens and buttons you cannot use are hidden automatically.
+            </FluentLabel>
+
+            <AuthorizeView>
+                <div class="line-list">
+                    @foreach (var permission in context.User.FindAll(Permissions.ClaimType)
+                                                      .Select(c => c.Value).Order())
+                    {
+                        <div class="line-row">
+                            <span>@permission</span>
+                            <FluentIcon Value="@(new Icons.Regular.Size16.CheckmarkCircle())" Color="Microsoft.FluentUI.AspNetCore.Components.Color.Success" />
+                        </div>
+                    }
+                </div>
+            </AuthorizeView>
+        </FluentCard>
+    </div>
+}
+
+@code {
+    private UserDto? _user;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+
+    private string _currentPassword = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private readonly List<string> _passwordErrors = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private static string RoleLabel(UserRole role) => role switch
+    {
+        UserRole.Administrator => "Administrator",
+        UserRole.InventoryManager => "Inventory manager",
+        UserRole.Staff => "Staff",
+        _ => "Unknown"
+    };
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _user = await Api.GetCurrentUserAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _passwordErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_currentPassword))
+            _passwordErrors.Add("Enter your current password.");
+
+        if (string.IsNullOrWhiteSpace(_newPassword) || _newPassword.Length < 6)
+            _passwordErrors.Add("New password must be at least 6 characters.");
+
+        if (_newPassword != _confirmPassword)
+            _passwordErrors.Add("The new passwords do not match.");
+
+        if (_passwordErrors.Count > 0)
+        {
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            await Api.ChangePasswordAsync(new ChangePasswordRequest
+            {
+                CurrentPassword = _currentPassword,
+                NewPassword = _newPassword
+            });
+
+            ToastService.ShowSuccess("Password updated.");
+            _currentPassword = _newPassword = _confirmPassword = string.Empty;
+        }
+        catch (ApiException ex)
+        {
+            _passwordErrors.Add(ex.Message);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SignOutAsync()
+    {
+        await AuthProvider.LogoutAsync();
+        Navigation.NavigateTo("/login", replace: true);
+    }
+}

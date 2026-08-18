@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package inventory.catalog;
+option csharp_namespace = "InventoryApp.Contracts.Catalog";
+
+import "common.proto";
+
+service SupplierService {
+  rpc ListSuppliers (ListSuppliersRequest) returns (ListSuppliersResponse);
+  rpc GetSupplier (inventory.common.IdRequest) returns (SupplierDto);
+  rpc CreateSupplier (CreateSupplierRequest) returns (SupplierDto);
+  rpc UpdateSupplier (UpdateSupplierRequest) returns (SupplierDto);
+  rpc DeleteSupplier (inventory.common.IdRequest) returns (inventory.common.OperationResult);
+  rpc GetSupplierLookup (inventory.common.Empty) returns (inventory.common.LookupList);
+}
+
+message SupplierDto {
+  int32 id = 1;
+  string company_name = 2;
+  string contact_person = 3;
+  string email = 4;
+  string phone = 5;
+  string address = 6;
+  string notes = 7;
+  bool is_active = 8;
+  int32 product_count = 9;
+  string created_at_utc = 10;
+  string updated_at_utc = 11;
+}
+
+message ListSuppliersRequest {
+  inventory.common.PageRequest page = 1;
+  optional bool only_active = 2;
+}
+
+message ListSuppliersResponse {
+  repeated SupplierDto items = 1;
+  inventory.common.PageInfo page_info = 2;
+}
+
+message CreateSupplierRequest {
+  string company_name = 1;
+  string contact_person = 2;
+  string email = 3;
+  string phone = 4;
+  string address = 5;
+  string notes = 6;
+  bool is_active = 7;
+}
+
+message UpdateSupplierRequest {
+  int32 id = 1;
+  string company_name = 2;
+  string contact_person = 3;
+  string email = 4;
+  string phone = 5;
+  string address = 6;
+  string notes = 7;
+  bool is_active = 8;
+}

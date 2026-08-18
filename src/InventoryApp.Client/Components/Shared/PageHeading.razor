@@ -1,0 +1,39 @@
+@* Consistent page title, subtitle, breadcrumb and action slot for every screen. *@
+
+<div class="page-header">
+    <div>
+        @if (Breadcrumbs is not null && Breadcrumbs.Count > 0)
+        {
+            <FluentBreadcrumb>
+                @foreach (var crumb in Breadcrumbs)
+                {
+                    <FluentBreadcrumbItem Href="@crumb.Href">@crumb.Label</FluentBreadcrumbItem>
+                }
+                <FluentBreadcrumbItem>@Title</FluentBreadcrumbItem>
+            </FluentBreadcrumb>
+        }
+
+        <h1 class="page-header__title">@Title</h1>
+
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <p class="page-header__subtitle">@Subtitle</p>
+        }
+    </div>
+
+    @if (Actions is not null)
+    {
+        <FluentStack HorizontalGap="8" VerticalAlignment="VerticalAlignment.Center">
+            @Actions
+        </FluentStack>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public List<Crumb>? Breadcrumbs { get; set; }
+
+    public record Crumb(string Label, string Href);
+}

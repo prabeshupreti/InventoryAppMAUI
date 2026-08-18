@@ -1,0 +1,414 @@
+@page "/reports"
+@attribute [Authorize(Policy = Permissions.ViewReports)]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+@inject FileExportService ExportService
+@inject IToastService ToastService
+
+<PageTitle>Reports - Inventory Manager</PageTitle>
+
+<PageHeading Title="Reports" Subtitle="Inventory, movement and trade reporting with CSV export">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.ExportReports">
+            <FluentButton IconStart="@(new Icons.Regular.Size16.ArrowDownload())"
+                          Loading="_exporting" Disabled="@(_exporting || _loading)"
+                          OnClick="ExportAsync">
+                Export CSV
+            </FluentButton>
+        </AuthorizeView>
+        <FluentButton IconStart="@(new Icons.Regular.Size16.ArrowSync())"
+                      Loading="_loading" Disabled="_loading" OnClick="LoadAsync">
+            Refresh
+        </FluentButton>
+    </Actions>
+</PageHeading>
+
+<FluentTabs @bind-ActiveTabId="_activeTab" OnTabChange="OnTabChangedAsync">
+    <FluentTab Id="inventory" Label="Current inventory" />
+    <FluentTab Id="valuation" Label="Valuation" />
+    <FluentTab Id="low" Label="Low stock" />
+    <FluentTab Id="out" Label="Out of stock" />
+    <FluentTab Id="movements" Label="Stock movements" />
+    <FluentTab Id="purchases" Label="Purchases" />
+    <FluentTab Id="sales" Label="Sales" />
+</FluentTabs>
+
+<div class="toolbar mt-2">
+    @if (IsInventoryReport)
+    {
+        <div class="toolbar__grow">
+            <FluentSearch @bind-Value="_search" @bind-Value:after="LoadAsync"
+                          Immediate="true" ImmediateDelay="400"
+                          Label="Search" Placeholder="Product name or SKU" Style="width:100%" />
+        </div>
+
+        <FluentSelect TOption="LookupItem" Label="Category" Items="@_categories"
+                      OptionValue="@(i => i.Id.ToString())" OptionText="@(i => i.Name)"
+                      @bind-Value="_categoryFilter" @bind-Value:after="LoadAsync"
+                      Placeholder="All categories" Width="200px" />
+
+        <FluentSelect TOption="LookupItem" Label="Supplier" Items="@_suppliers"
+                      OptionValue="@(i => i.Id.ToString())" OptionText="@(i => i.Name)"
+                      @bind-Value="_supplierFilter" @bind-Value:after="LoadAsync"
+                      Placeholder="All suppliers" Width="200px" />
+    }
+    else
+    {
+        <FluentDatePicker @bind-Value="_fromDate" @bind-Value:after="LoadAsync"
+                          Label="From" Style="width:160px" />
+        <FluentDatePicker @bind-Value="_toDate" @bind-Value:after="LoadAsync"
+                          Label="To" Style="width:160px" />
+
+        <FluentSelect TOption="LookupItem" Label="Category" Items="@_categories"
+                      OptionValue="@(i => i.Id.ToString())" OptionText="@(i => i.Name)"
+                      @bind-Value="_categoryFilter" @bind-Value:after="LoadAsync"
+                      Placeholder="All categories" Width="200px" />
+
+        @if (_activeTab is "purchases" or "movements")
+        {
+            <FluentSelect TOption="LookupItem" Label="Supplier" Items="@_suppliers"
+                          OptionValue="@(i => i.Id.ToString())" OptionText="@(i => i.Name)"
+                          @bind-Value="_supplierFilter" @bind-Value:after="LoadAsync"
+                          Placeholder="All suppliers" Width="200px" />
+        }
+    }
+
+    <FluentButton IconStart="@(new Icons.Regular.Size16.FilterDismiss())" OnClick="ClearFiltersAsync">
+        Clear
+    </FluentButton>
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_loading)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Running report..." />
+}
+else if (IsInventoryReport)
+{
+    @if (_inventory is null || _inventory.Rows.Count == 0)
+    {
+        <StateBlock State="StateBlock.BlockState.Empty"
+                    Title="Nothing to report"
+                    Message="No product matches these filters." />
+    }
+    else
+    {
+        <div class="stat-grid">
+            <StatCard Label="Products" Value="@FormatHelpers.Number(_inventory.TotalProducts)" />
+            <StatCard Label="Units" Value="@FormatHelpers.Number(_inventory.TotalUnits)" />
+            <StatCard Label="Stock value" Value="@FormatHelpers.Money(_inventory.TotalStockValue)"
+                      Hint="At cost price" />
+            <StatCard Label="Retail value" Value="@FormatHelpers.Money(_inventory.TotalRetailValue)"
+                      Hint="At selling price" />
+        </div>
+
+        <FluentCard>
+            <div class="grid-scroll">
+                <FluentDataGrid Items="@_inventory.Rows.AsQueryable()" TGridItem="InventoryValuationRow"
+                                Virtualize="true" ItemSize="42"
+                                GridTemplateColumns="1fr 2fr 1.2fr 1.3fr 0.7fr 0.7fr 0.9fr 1fr 1.1fr">
+                    <PropertyColumn Property="@(r => r.Sku)" Title="SKU" Sortable="true" />
+                    <PropertyColumn Property="@(r => r.Name)" Title="Product" Sortable="true" />
+                    <PropertyColumn Property="@(r => r.CategoryName)" Title="Category" Sortable="true" />
+                    <PropertyColumn Property="@(r => r.SupplierName)" Title="Supplier" Sortable="true" />
+
+                    <TemplateColumn Title="Stock" Align="Align.End" Sortable="true">
+                        <span class="numeric">@FormatHelpers.Number(context.CurrentStock)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Min" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Number(context.MinimumStock)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Cost" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Money(context.CostPrice)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Stock value" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Money(context.StockValue)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Last movement">
+                        @(context.HasLastMovementAtUtc ? FormatHelpers.Date(context.LastMovementAtUtc) : "-")
+                    </TemplateColumn>
+                </FluentDataGrid>
+            </div>
+        </FluentCard>
+    }
+}
+else if (_activeTab == "movements")
+{
+    @if (_movements.Count == 0)
+    {
+        <StateBlock State="StateBlock.BlockState.Empty"
+                    Title="No movements in this period"
+                    Message="Try widening the date range." />
+    }
+    else
+    {
+        <FluentCard>
+            <div class="grid-scroll">
+                <FluentDataGrid Items="@_movements.AsQueryable()" TGridItem="StockMovementDto"
+                                Virtualize="true" ItemSize="42"
+                                GridTemplateColumns="1.2fr 1.6fr 1.1fr 0.6fr 0.9fr 1.4fr 1fr">
+                    <TemplateColumn Title="Date">@FormatHelpers.DateTimeShort(context.CreatedAtUtc)</TemplateColumn>
+                    <PropertyColumn Property="@(m => m.ProductName)" Title="Product" />
+
+                    <TemplateColumn Title="Type">
+                        <FluentBadge Appearance="Appearance.Neutral"
+                                     BackgroundColor="@FormatHelpers.MovementColor(context.MovementType)"
+                                     Color="white">
+                            @FormatHelpers.MovementLabel(context.MovementType)
+                        </FluentBadge>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Qty" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Signed(context.Quantity)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Balance" Align="Align.End">
+                        <span class="numeric">@context.PreviousQuantity &rarr; @context.NewQuantity</span>
+                    </TemplateColumn>
+
+                    <PropertyColumn Property="@(m => m.Reason)" Title="Reason" />
+                    <PropertyColumn Property="@(m => m.UserName)" Title="User" />
+                </FluentDataGrid>
+            </div>
+            <FluentLabel Class="mt-2" Color="Color.Disabled" Typo="Typography.Body">
+                Showing the most recent @_movements.Count movement(s). Export to CSV for the full set.
+            </FluentLabel>
+        </FluentCard>
+    }
+}
+else
+{
+    @if (_trade is null || _trade.Rows.Count == 0)
+    {
+        <StateBlock State="StateBlock.BlockState.Empty"
+                    Title="No documents in this period"
+                    Message="Try widening the date range." />
+    }
+    else
+    {
+        <div class="stat-grid">
+            <StatCard Label="Documents" Value="@FormatHelpers.Number(_trade.DocumentCount)" />
+            <StatCard Label="Total quantity" Value="@FormatHelpers.Number(_trade.TotalQuantity)" />
+            <StatCard Label="Total value" Value="@FormatHelpers.Money(_trade.TotalAmount)" />
+        </div>
+
+        <FluentCard>
+            <div class="grid-scroll">
+                <FluentDataGrid Items="@_trade.Rows.AsQueryable()" TGridItem="TradeReportRow"
+                                Virtualize="true" ItemSize="42"
+                                GridTemplateColumns="1.1fr 1fr 1.8fr 1fr 0.6fr 0.8fr 1fr">
+                    <PropertyColumn Property="@(r => r.DocumentNumber)" Title="Document" Sortable="true" />
+                    <TemplateColumn Title="Date">@FormatHelpers.Date(context.DateUtc)</TemplateColumn>
+                    <PropertyColumn Property="@(r => r.Party)"
+                                    Title="@(_activeTab == "purchases" ? "Supplier" : "Customer")" Sortable="true" />
+                    <PropertyColumn Property="@(r => r.Status)" Title="Status" />
+
+                    <TemplateColumn Title="Lines" Align="Align.End">
+                        <span class="numeric">@context.LineCount</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Qty" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Number(context.TotalQuantity)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Amount" Align="Align.End" Sortable="true">
+                        <span class="numeric">@FormatHelpers.Money(context.TotalAmount)</span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            </div>
+        </FluentCard>
+    }
+}
+
+@code {
+    private string _activeTab = "inventory";
+
+    private InventoryValuationResponse? _inventory;
+    private TradeReportResponse? _trade;
+    private readonly List<StockMovementDto> _movements = [];
+
+    private List<LookupItem> _categories = [];
+    private List<LookupItem> _suppliers = [];
+
+    private string _search = string.Empty;
+    private string? _categoryFilter;
+    private string? _supplierFilter;
+    private DateTime? _fromDate = DateTime.Today.AddDays(-30);
+    private DateTime? _toDate = DateTime.Today;
+
+    private bool _loading = true;
+    private bool _exporting;
+    private string? _error;
+
+    private bool IsInventoryReport => _activeTab is "inventory" or "valuation" or "low" or "out";
+
+    private ReportType CurrentReportType => _activeTab switch
+    {
+        "inventory" => ReportType.CurrentInventory,
+        "valuation" => ReportType.InventoryValuation,
+        "low" => ReportType.LowStock,
+        "out" => ReportType.OutOfStock,
+        "movements" => ReportType.StockMovements,
+        "purchases" => ReportType.Purchases,
+        _ => ReportType.Sales
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var categories = await Api.GetCategoryLookupAsync();
+            var suppliers = await Api.GetSupplierLookupAsync();
+            _categories = categories.Items.ToList();
+            _suppliers = suppliers.Items.ToList();
+        }
+        catch (ApiException) { }
+
+        await LoadAsync();
+    }
+
+    private async Task OnTabChangedAsync(FluentTab tab)
+    {
+        _activeTab = tab.Id ?? "inventory";
+        await LoadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _search = string.Empty;
+        _categoryFilter = null;
+        _supplierFilter = null;
+        _fromDate = DateTime.Today.AddDays(-30);
+        _toDate = DateTime.Today;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            if (IsInventoryReport)
+            {
+                var request = new InventoryReportRequest
+                {
+                    ReportType = CurrentReportType,
+                    Search = _search ?? string.Empty
+                };
+
+                if (int.TryParse(_categoryFilter, out var categoryId) && categoryId > 0)
+                    request.CategoryId = categoryId;
+
+                if (int.TryParse(_supplierFilter, out var supplierId) && supplierId > 0)
+                    request.SupplierId = supplierId;
+
+                _inventory = await Api.GetInventoryReportAsync(request);
+            }
+            else if (_activeTab == "movements")
+            {
+                var request = new ListMovementsRequest
+                {
+                    Page = new PageRequest { Page = 1, PageSize = 200 },
+                    DateRange = BuildDateRange()
+                };
+
+                if (int.TryParse(_categoryFilter, out var categoryId) && categoryId > 0)
+                    request.CategoryId = categoryId;
+
+                var response = await Api.ListMovementsAsync(request);
+                _movements.Clear();
+                _movements.AddRange(response.Items);
+            }
+            else
+            {
+                var request = new TradeReportRequest { DateRange = BuildDateRange() };
+
+                if (int.TryParse(_categoryFilter, out var categoryId) && categoryId > 0)
+                    request.CategoryId = categoryId;
+
+                if (_activeTab == "purchases" && int.TryParse(_supplierFilter, out var supplierId) && supplierId > 0)
+                    request.SupplierId = supplierId;
+
+                _trade = _activeTab == "purchases"
+                    ? await Api.GetPurchaseReportAsync(request)
+                    : await Api.GetSalesReportAsync(request);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private DateRange BuildDateRange()
+    {
+        var range = new DateRange();
+
+        if (_fromDate.HasValue) range.FromUtc = FormatHelpers.ToIso(_fromDate.Value.Date);
+        if (_toDate.HasValue) range.ToUtc = FormatHelpers.ToIso(_toDate.Value.Date);
+
+        return range;
+    }
+
+    private async Task ExportAsync()
+    {
+        _exporting = true;
+
+        try
+        {
+            var request = new ExportRequest
+            {
+                ReportType = CurrentReportType,
+                Search = _search ?? string.Empty,
+                DateRange = BuildDateRange()
+            };
+
+            if (int.TryParse(_categoryFilter, out var categoryId) && categoryId > 0)
+                request.CategoryId = categoryId;
+
+            if (int.TryParse(_supplierFilter, out var supplierId) && supplierId > 0)
+                request.SupplierId = supplierId;
+
+            var export = await Api.ExportCsvAsync(request);
+
+            if (export.RowCount == 0)
+            {
+                ToastService.ShowWarning("There is nothing to export for these filters.");
+                return;
+            }
+
+            var shared = await ExportService.SaveAndShareAsync(
+                export.FileName, export.Content, "Inventory report");
+
+            if (shared)
+            {
+                ToastService.ShowSuccess($"Exported {export.RowCount} row(s) to {export.FileName}.");
+            }
+            else
+            {
+                ToastService.ShowError("The file could not be saved on this device.");
+            }
+        }
+        catch (ApiException ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+}

@@ -1,0 +1,134 @@
+@page "/sales/{SaleId:int}"
+@attribute [Authorize(Policy = Permissions.ViewSales)]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+
+<PageTitle>@(_sale?.SaleNumber ?? "Sale")</PageTitle>
+
+@if (_loading && _sale is null)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading sale..." />
+}
+else if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_sale is not null)
+{
+    <PageHeading Title="@_sale.SaleNumber"
+                 Subtitle="@($"{_sale.CustomerName} · {FormatHelpers.Date(_sale.SaleDateUtc)}")"
+                 Breadcrumbs="@(new List<PageHeading.Crumb> { new("Sales", "/sales") })">
+        <Actions>
+            <FluentBadge Appearance="Appearance.Neutral"
+                         BackgroundColor="@FormatHelpers.SaleStatusColor(_sale.Status)"
+                         Color="white">
+                @FormatHelpers.SaleStatusLabel(_sale.Status)
+            </FluentBadge>
+
+            <AuthorizeView Policy="@Permissions.ManageSales">
+                @if (_sale.Status == SaleStatus.Completed)
+                {
+                    <ConfirmButton Icon="@(new Icons.Regular.Size16.ArrowUndo())"
+                                   ConfirmTitle="Cancel sale"
+                                   ConfirmMessage="@($"Cancel {_sale.SaleNumber}? Every item will be returned to stock as a sale return movement.")"
+                                   ConfirmLabel="Cancel sale"
+                                   CancelLabel="Keep it"
+                                   SuccessMessage="Sale cancelled and stock restored."
+                                   Action="@(() => Api.CancelSaleAsync(_sale.Id))"
+                                   OnCompleted="LoadAsync">
+                        Cancel sale
+                    </ConfirmButton>
+                }
+            </AuthorizeView>
+        </Actions>
+    </PageHeading>
+
+    @if (_sale.Status == SaleStatus.Cancelled)
+    {
+        <FluentMessageBar Intent="@MessageIntent.Warning" Class="mb-2" Title="This sale was cancelled">
+            All items were returned to stock. The original movements remain in the audit history.
+        </FluentMessageBar>
+    }
+
+    <div class="panel-grid">
+        <FluentCard style="grid-column: span 2; min-width:0;">
+            <h2 class="panel-title">Line items</h2>
+
+            <div class="grid-scroll">
+                <FluentDataGrid Items="@_sale.Items.AsQueryable()" TGridItem="SaleItemDto"
+                                GridTemplateColumns="1fr 2fr 0.7fr 1fr 1fr">
+                    <PropertyColumn Property="@(i => i.ProductSku)" Title="SKU" />
+
+                    <TemplateColumn Title="Product">
+                        <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{context.ProductId}")">
+                            @context.ProductName
+                        </FluentAnchor>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Qty" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Number(context.Quantity)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Unit price" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Money(context.UnitPrice)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Line total" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Money(context.LineTotal)</span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            </div>
+
+            <div class="totals mt-2">
+                <div class="totals__row"><span>Subtotal</span>
+                    <span class="numeric">@FormatHelpers.Money(_sale.Subtotal)</span></div>
+                <div class="totals__row"><span>Discount</span>
+                    <span class="numeric">-@FormatHelpers.Money(_sale.DiscountAmount)</span></div>
+                <div class="totals__row"><span>Tax (@_sale.TaxRate.ToString("0.##")%)</span>
+                    <span class="numeric">@FormatHelpers.Money(_sale.TaxAmount)</span></div>
+                <div class="totals__row totals__row--grand"><span>Total</span>
+                    <span class="numeric">@FormatHelpers.Money(_sale.Total)</span></div>
+            </div>
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Sale details</h2>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                <DetailRow Label="Customer" Value="@_sale.CustomerName" />
+                <DetailRow Label="Date" Value="@FormatHelpers.DateTimeShort(_sale.SaleDateUtc)" />
+                <DetailRow Label="Recorded by" Value="@_sale.CreatedBy" />
+                <DetailRow Label="Items" Value="@_sale.Items.Sum(i => i.Quantity).ToString()" />
+                <DetailRow Label="Notes" Value="@(string.IsNullOrWhiteSpace(_sale.Notes) ? "-" : _sale.Notes)" />
+            </FluentStack>
+        </FluentCard>
+    </div>
+}
+
+@code {
+    [Parameter] public int SaleId { get; set; }
+
+    private SaleDto? _sale;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _sale = await Api.GetSaleAsync(SaleId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

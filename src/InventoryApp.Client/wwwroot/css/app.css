@@ -1,0 +1,324 @@
+/* Layout scaffolding only. Anything a Fluent component already handles is left alone. */
+
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+    background-color: var(--neutral-layer-1);
+    color: var(--neutral-foreground-rest);
+    overscroll-behavior: none;
+}
+
+#app {
+    height: 100vh;
+    height: 100dvh;
+}
+
+/* Boot placeholder shown before Blazor takes over. */
+.app-boot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: #616161;
+}
+
+.app-boot__spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid #d1d1d1;
+    border-top-color: #0f6cbd;
+    border-radius: 50%;
+    animation: app-boot-spin 0.9s linear infinite;
+}
+
+@keyframes app-boot-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* iOS notch / Android status bar. */
+.status-bar-safe-area {
+    height: env(safe-area-inset-top);
+    background: var(--neutral-layer-3);
+}
+
+/* ---- Page scaffolding ---- */
+
+.page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.page-header__title {
+    margin: 0;
+    font-size: var(--type-ramp-plus-3-font-size);
+    line-height: var(--type-ramp-plus-3-line-height);
+    font-weight: 600;
+}
+
+.page-header__subtitle {
+    margin: 4px 0 0;
+    color: var(--neutral-foreground-hint);
+    font-size: var(--type-ramp-minus-1-font-size);
+}
+
+.content-area {
+    padding: 20px 24px 40px;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+    margin-bottom: 16px;
+}
+
+.toolbar > * { min-width: 0; }
+.toolbar__grow { flex: 1 1 240px; }
+
+/* ---- State blocks ---- */
+
+.state-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--neutral-foreground-hint);
+}
+
+.state-block__title {
+    font-weight: 600;
+    color: var(--neutral-foreground-rest);
+    font-size: var(--type-ramp-plus-1-font-size);
+}
+
+/* ---- Dashboard ---- */
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.stat-card__label {
+    color: var(--neutral-foreground-hint);
+    font-size: var(--type-ramp-minus-1-font-size);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.stat-card__value {
+    font-size: var(--type-ramp-plus-4-font-size);
+    line-height: 1.15;
+    font-weight: 600;
+    margin: 6px 0 2px;
+}
+
+.stat-card__hint {
+    font-size: var(--type-ramp-minus-1-font-size);
+    color: var(--neutral-foreground-hint);
+}
+
+.panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+    align-items: start;
+}
+
+.panel-title {
+    margin: 0 0 12px;
+    font-size: var(--type-ramp-plus-1-font-size);
+    font-weight: 600;
+}
+
+/* Minimal bar chart. Fluent UI Blazor v4 has no chart component, so this is
+   built from design tokens rather than pulling in a charting dependency. */
+.chart {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chart-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 30%) 1fr auto;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--type-ramp-minus-1-font-size);
+}
+
+.chart-row__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--neutral-foreground-hint);
+}
+
+.chart-row__track {
+    background: var(--neutral-layer-3);
+    border-radius: 4px;
+    height: 10px;
+    overflow: hidden;
+}
+
+.chart-row__fill {
+    height: 100%;
+    background: var(--accent-fill-rest);
+    border-radius: 4px;
+    transition: width 240ms ease;
+}
+
+.chart-row__fill--alt { background: var(--success); }
+.chart-row__value { font-variant-numeric: tabular-nums; }
+
+/* ---- Tables and lists ---- */
+
+.grid-scroll { overflow-x: auto; }
+
+.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+
+.line-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.line-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--neutral-stroke-divider-rest);
+}
+
+.line-row:last-child { border-bottom: none; }
+
+.line-row__meta {
+    color: var(--neutral-foreground-hint);
+    font-size: var(--type-ramp-minus-1-font-size);
+}
+
+.totals {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-left: auto;
+    min-width: 260px;
+}
+
+.totals__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.totals__row--grand {
+    font-weight: 700;
+    font-size: var(--type-ramp-plus-1-font-size);
+    border-top: 1px solid var(--neutral-stroke-divider-rest);
+    padding-top: 8px;
+}
+
+/* ---- Forms ---- */
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+}
+
+.form-grid--single { grid-template-columns: 1fr; }
+.form-span-2 { grid-column: 1 / -1; }
+
+.dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: min(680px, 82vw);
+}
+
+/* ---- Login ---- */
+
+.login-shell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 24px;
+    box-sizing: border-box;
+    background: var(--neutral-layer-2);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+}
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.login-hint {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--neutral-stroke-divider-rest);
+    font-size: var(--type-ramp-minus-1-font-size);
+    color: var(--neutral-foreground-hint);
+}
+
+.login-hint code {
+    background: var(--neutral-layer-3);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 720px) {
+    .content-area { padding: 14px 12px 32px; }
+    .stat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .stat-card__value { font-size: var(--type-ramp-plus-2-font-size); }
+    .totals { min-width: 100%; }
+    .dialog-body { min-width: auto; }
+}
+
+/* ---- Blazor error UI ---- */
+
+#blazor-error-ui {
+    background: #ffd7d7;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.7rem 1.3rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

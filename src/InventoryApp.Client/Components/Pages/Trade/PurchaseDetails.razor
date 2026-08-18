@@ -1,0 +1,209 @@
+@page "/purchases/{PurchaseId:int}"
+@attribute [Authorize(Policy = Permissions.ViewPurchases)]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject IToastService ToastService
+
+<PageTitle>@(_order?.OrderNumber ?? "Purchase order")</PageTitle>
+
+@if (_loading && _order is null)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading order..." />
+}
+else if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_order is not null)
+{
+    <PageHeading Title="@_order.OrderNumber"
+                 Subtitle="@($"{_order.SupplierName} · ordered {FormatHelpers.Date(_order.OrderDateUtc)}")"
+                 Breadcrumbs="@(new List<PageHeading.Crumb> { new("Purchases", "/purchases") })">
+        <Actions>
+            <FluentBadge Appearance="Appearance.Neutral"
+                         BackgroundColor="@FormatHelpers.PurchaseStatusColor(_order.Status)"
+                         Color="white">
+                @FormatHelpers.PurchaseStatusLabel(_order.Status)
+            </FluentBadge>
+
+            <AuthorizeView Policy="@Permissions.ManagePurchases">
+                @if (_order.Status == PurchaseStatus.Draft)
+                {
+                    <FluentButton IconStart="@(new Icons.Regular.Size16.Edit())"
+                                  OnClick="@(() => Navigation.NavigateTo($"/purchases/{_order.Id}/edit"))">
+                        Edit
+                    </FluentButton>
+
+                    <ConfirmButton Appearance="Appearance.Neutral"
+                                   Icon="@(new Icons.Regular.Size16.Send())"
+                                   ConfirmTitle="Submit order"
+                                   ConfirmMessage="@($"Mark {_order.OrderNumber} as ordered? It can no longer be edited afterwards.")"
+                                   ConfirmLabel="Submit"
+                                   SuccessMessage="Order submitted."
+                                   Action="@(() => Api.SubmitPurchaseAsync(_order.Id))"
+                                   OnCompleted="LoadAsync">
+                        Submit
+                    </ConfirmButton>
+                }
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Permissions.ReceivePurchases">
+                @if (_order.Status is PurchaseStatus.Draft or PurchaseStatus.Ordered)
+                {
+                    <FluentButton Appearance="Appearance.Accent"
+                                  IconStart="@(new Icons.Regular.Size16.ArrowExit())"
+                                  Loading="_busy" Disabled="_busy"
+                                  OnClick="ReceiveAsync">
+                        Receive goods
+                    </FluentButton>
+                }
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Permissions.ManagePurchases">
+                @if (_order.Status is PurchaseStatus.Draft or PurchaseStatus.Ordered)
+                {
+                    <ConfirmButton Icon="@(new Icons.Regular.Size16.DismissCircle())"
+                                   ConfirmTitle="Cancel order"
+                                   ConfirmMessage="@($"Cancel {_order.OrderNumber}? Stock is not affected.")"
+                                   ConfirmLabel="Cancel order"
+                                   CancelLabel="Keep it"
+                                   SuccessMessage="Order cancelled."
+                                   Action="@(() => Api.CancelPurchaseAsync(_order.Id))"
+                                   OnCompleted="LoadAsync">
+                        Cancel order
+                    </ConfirmButton>
+                }
+            </AuthorizeView>
+        </Actions>
+    </PageHeading>
+
+    @if (_order.Status == PurchaseStatus.Received)
+    {
+        <FluentMessageBar Intent="@MessageIntent.Success" Class="mb-2"
+                          Title="@($"Received on {FormatHelpers.Date(_order.ReceivedDateUtc)}")">
+            Stock was increased for every line and a purchase receipt movement was recorded.
+        </FluentMessageBar>
+    }
+
+    <div class="panel-grid">
+        <FluentCard style="grid-column: span 2; min-width:0;">
+            <h2 class="panel-title">Line items</h2>
+
+            <div class="grid-scroll">
+                <FluentDataGrid Items="@_order.Items.AsQueryable()" TGridItem="PurchaseItemDto"
+                                GridTemplateColumns="1fr 2fr 0.7fr 1fr 1fr">
+                    <PropertyColumn Property="i => i.ProductSku" Title="SKU" />
+
+                    <TemplateColumn Title="Product">
+                        <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{context.ProductId}")">
+                            @context.ProductName
+                        </FluentAnchor>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Qty" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Number(context.Quantity)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Unit cost" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Money(context.UnitCost)</span>
+                    </TemplateColumn>
+
+                    <TemplateColumn Title="Line total" Align="Align.End">
+                        <span class="numeric">@FormatHelpers.Money(context.LineTotal)</span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            </div>
+
+            <div class="totals mt-2">
+                <div class="totals__row"><span>Subtotal</span>
+                    <span class="numeric">@FormatHelpers.Money(_order.Subtotal)</span></div>
+                <div class="totals__row"><span>Discount</span>
+                    <span class="numeric">-@FormatHelpers.Money(_order.DiscountAmount)</span></div>
+                <div class="totals__row"><span>Tax (@_order.TaxRate.ToString("0.##")%)</span>
+                    <span class="numeric">@FormatHelpers.Money(_order.TaxAmount)</span></div>
+                <div class="totals__row totals__row--grand"><span>Total</span>
+                    <span class="numeric">@FormatHelpers.Money(_order.Total)</span></div>
+            </div>
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Order details</h2>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                <DetailRow Label="Supplier" Value="@_order.SupplierName" />
+                <DetailRow Label="Order date" Value="@FormatHelpers.Date(_order.OrderDateUtc)" />
+                <DetailRow Label="Expected"
+                           Value="@(_order.HasExpectedDateUtc ? FormatHelpers.Date(_order.ExpectedDateUtc) : "-")" />
+                <DetailRow Label="Received"
+                           Value="@(_order.HasReceivedDateUtc ? FormatHelpers.Date(_order.ReceivedDateUtc) : "-")" />
+                <DetailRow Label="Created by" Value="@_order.CreatedBy" />
+                <DetailRow Label="Notes" Value="@(string.IsNullOrWhiteSpace(_order.Notes) ? "-" : _order.Notes)" />
+            </FluentStack>
+        </FluentCard>
+    </div>
+}
+
+@code {
+    [Parameter] public int PurchaseId { get; set; }
+
+    private PurchaseOrderDto? _order;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _order = await Api.GetPurchaseAsync(PurchaseId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReceiveAsync()
+    {
+        if (_order is null) return;
+
+        var dialog = await DialogService.ShowConfirmationAsync(
+            $"Receiving {_order.OrderNumber} will add {_order.Items.Sum(i => i.Quantity)} unit(s) " +
+            $"across {_order.Items.Count} product(s) to stock. This cannot be undone.",
+            "Receive goods",
+            "Cancel",
+            "Receive this order?");
+
+        var result = await dialog.Result;
+        if (result.Cancelled)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            _order = await Api.ReceivePurchaseAsync(_order.Id, _order.OrderNumber);
+            ToastService.ShowSuccess("Goods received and stock updated.");
+        }
+        catch (ApiException ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

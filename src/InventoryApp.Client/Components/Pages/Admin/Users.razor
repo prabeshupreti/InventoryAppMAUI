@@ -1,0 +1,171 @@
+@page "/users"
+@attribute [Authorize(Policy = Permissions.ManageUsers)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Users - Inventory Manager</PageTitle>
+
+<PageHeading Title="Users" Subtitle="@($"{_pageInfo?.TotalCount ?? 0} account(s)")">
+    <Actions>
+        <FluentButton Appearance="Appearance.Accent"
+                      IconStart="@(new Icons.Regular.Size16.PersonAdd())"
+                      OnClick="@(() => OpenEditorAsync(null))">
+            New user
+        </FluentButton>
+    </Actions>
+</PageHeading>
+
+<div class="toolbar">
+    <div class="toolbar__grow">
+        <FluentSearch @bind-Value="_search" @bind-Value:after="ReloadFirstPageAsync"
+                      Immediate="true" ImmediateDelay="350"
+                      Label="Search" Placeholder="Username, name or email" Style="width:100%" />
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="ReloadAsync" />
+}
+else if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading users..." />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty" Title="No users found" Message="No account matches your search." />
+}
+else
+{
+    <FluentCard>
+        <div class="grid-scroll" style="opacity:@(_loading ? "0.6" : "1");">
+            <FluentDataGrid Items="@_items.AsQueryable()" TGridItem="UserDto"
+                            GridTemplateColumns="1.1fr 1.6fr 1.8fr 1.2fr 0.8fr 1.1fr 0.9fr">
+                <PropertyColumn Property="@(u => u.Username)" Title="Username" Sortable="true" />
+                <PropertyColumn Property="@(u => u.FullName)" Title="Full name" Sortable="true" />
+                <PropertyColumn Property="@(u => u.Email)" Title="Email" />
+
+                <TemplateColumn Title="Role">
+                    <FluentBadge Appearance="Appearance.Neutral">@RoleLabel(context.Role)</FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <FluentBadge Appearance="Appearance.Neutral"
+                                 BackgroundColor="@(context.IsActive ? "var(--success)" : "var(--neutral-fill-secondary-rest)")"
+                                 Color="@(context.IsActive ? "white" : "var(--neutral-foreground-rest)")">
+                        @(context.IsActive ? "Active" : "Disabled")
+                    </FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Last sign-in">
+                    @(context.HasLastLoginAtUtc ? FormatHelpers.DateTimeShort(context.LastLoginAtUtc) : "Never")
+                </TemplateColumn>
+
+                <TemplateColumn Title="Actions" Align="Align.End">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Icons.Regular.Size16.Edit())"
+                                  Title="Edit user"
+                                  OnClick="@(() => OpenEditorAsync(context))" />
+
+                    <ConfirmButton Icon="@(new Icons.Regular.Size16.Delete())"
+                                   Tooltip="Delete user"
+                                   ConfirmTitle="Delete user"
+                                   ConfirmMessage="@($"Delete '{context.Username}'? Their name stays on historical stock movements.")"
+                                   ConfirmLabel="Delete"
+                                   SuccessMessage="@($"'{context.Username}' was deleted.")"
+                                   Action="@(() => Api.DeleteUserAsync(context.Id))"
+                                   OnCompleted="ReloadAsync" />
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <Pager PageInfo="_pageInfo" CurrentPage="_page" Busy="_loading" OnPageChanged="GoToPageAsync" />
+    </FluentCard>
+}
+
+@code {
+    private readonly List<UserDto> _items = [];
+    private PageInfo? _pageInfo;
+    private string _search = string.Empty;
+    private int _page = 1;
+    private bool _loading = true;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private static string RoleLabel(UserRole role) => role switch
+    {
+        UserRole.Administrator => "Administrator",
+        UserRole.InventoryManager => "Inventory manager",
+        UserRole.Staff => "Staff",
+        _ => "Unknown"
+    };
+
+    private Task ReloadFirstPageAsync()
+    {
+        _page = 1;
+        return ReloadAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        _page = page;
+        return ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var response = await Api.ListUsersAsync(new PageRequest
+            {
+                Page = _page,
+                PageSize = 20,
+                Search = _search ?? string.Empty,
+                SortBy = "username"
+            }, _cts.Token);
+
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _pageInfo = response.PageInfo;
+            _page = response.PageInfo.Page == 0 ? 1 : response.PageInfo.Page;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenEditorAsync(UserDto? user)
+    {
+        var dialog = await DialogService.ShowDialogAsync<UserEditor>(
+            user ?? new UserDto { IsActive = true, Role = UserRole.Staff },
+            new DialogParameters
+            {
+                Title = user is null ? "New user" : $"Edit {user.Username}",
+                PreventDismissOnOverlayClick = true,
+                Width = "min(560px, 94vw)"
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

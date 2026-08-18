@@ -1,0 +1,159 @@
+@implements IDialogContentComponent<SupplierDto>
+@inject InventoryApiClient Api
+@inject IToastService ToastService
+
+<FluentDialogHeader ShowDismiss="true">
+    <FluentLabel Typo="Typography.PaneHeader">@(IsNew ? "New supplier" : "Edit supplier")</FluentLabel>
+</FluentDialogHeader>
+
+<FluentDialogBody>
+    <div class="dialog-body" style="min-width:min(580px, 84vw)">
+        @if (_errors.Count > 0)
+        {
+            <FluentMessageBar Intent="@MessageIntent.Error" Title="Please fix the following">
+                <ul style="margin:4px 0 0 18px; padding:0;">
+                    @foreach (var error in _errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            </FluentMessageBar>
+        }
+
+        <div class="form-grid">
+            <div class="form-span-2">
+                <FluentTextField @bind-Value="_companyName" Label="Company name *" Required="true"
+                                 Disabled="_busy" Style="width:100%" />
+            </div>
+
+            <FluentTextField @bind-Value="_contactPerson" Label="Contact person"
+                             Disabled="_busy" Style="width:100%" />
+
+            <FluentTextField @bind-Value="_phone" Label="Phone" Disabled="_busy" Style="width:100%" />
+
+            <div class="form-span-2">
+                <FluentTextField @bind-Value="_email" Label="Email" TextFieldType="TextFieldType.Email"
+                                 Disabled="_busy" Style="width:100%" />
+            </div>
+
+            <div class="form-span-2">
+                <FluentTextArea @bind-Value="_address" Label="Address" Rows="2"
+                                Disabled="_busy" Style="width:100%" />
+            </div>
+
+            <div class="form-span-2">
+                <FluentTextArea @bind-Value="_notes" Label="Notes" Rows="2"
+                                Placeholder="Payment terms, lead times, anything worth remembering"
+                                Disabled="_busy" Style="width:100%" />
+            </div>
+
+            <div class="form-span-2">
+                <FluentSwitch @bind-Value="_isActive" Label="Active" Disabled="_busy" />
+            </div>
+        </div>
+    </div>
+</FluentDialogBody>
+
+<FluentDialogFooter>
+    <FluentButton Appearance="Appearance.Neutral" Disabled="_busy" OnClick="@(() => Dialog.CancelAsync())">
+        Cancel
+    </FluentButton>
+    <FluentButton Appearance="Appearance.Accent" Loading="_busy" Disabled="_busy" OnClick="SaveAsync">
+        @(IsNew ? "Create" : "Save changes")
+    </FluentButton>
+</FluentDialogFooter>
+
+@code {
+    [Parameter] public SupplierDto Content { get; set; } = new();
+    [CascadingParameter] public FluentDialog Dialog { get; set; } = default!;
+
+    private bool IsNew => Content.Id == 0;
+    private readonly List<string> _errors = [];
+    private bool _busy;
+
+    private string _companyName = string.Empty;
+    private string _contactPerson = string.Empty;
+    private string _email = string.Empty;
+    private string _phone = string.Empty;
+    private string _address = string.Empty;
+    private string _notes = string.Empty;
+    private bool _isActive = true;
+
+    protected override void OnInitialized()
+    {
+        _companyName = Content.CompanyName;
+        _contactPerson = Content.ContactPerson;
+        _email = Content.Email;
+        _phone = Content.Phone;
+        _address = Content.Address;
+        _notes = Content.Notes;
+        _isActive = IsNew || Content.IsActive;
+    }
+
+    private async Task SaveAsync()
+    {
+        _errors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_companyName))
+        {
+            _errors.Add("Company name is required.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_email) && !_email.Contains('@'))
+        {
+            _errors.Add("Enter a valid email address.");
+        }
+
+        if (_errors.Count > 0)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            if (IsNew)
+            {
+                var created = await Api.CreateSupplierAsync(new CreateSupplierRequest
+                {
+                    CompanyName = _companyName.Trim(),
+                    ContactPerson = _contactPerson ?? string.Empty,
+                    Email = _email ?? string.Empty,
+                    Phone = _phone ?? string.Empty,
+                    Address = _address ?? string.Empty,
+                    Notes = _notes ?? string.Empty,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"'{created.CompanyName}' was created.");
+                await Dialog.CloseAsync(created);
+            }
+            else
+            {
+                var updated = await Api.UpdateSupplierAsync(new UpdateSupplierRequest
+                {
+                    Id = Content.Id,
+                    CompanyName = _companyName.Trim(),
+                    ContactPerson = _contactPerson ?? string.Empty,
+                    Email = _email ?? string.Empty,
+                    Phone = _phone ?? string.Empty,
+                    Address = _address ?? string.Empty,
+                    Notes = _notes ?? string.Empty,
+                    IsActive = _isActive
+                });
+
+                ToastService.ShowSuccess($"'{updated.CompanyName}' was updated.");
+                await Dialog.CloseAsync(updated);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

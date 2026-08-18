@@ -1,0 +1,27 @@
+<FluentCard AreaRestricted="false" Class="stat-card">
+    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="12">
+        @if (Icon is not null)
+        {
+            <FluentIcon Value="@Icon" Color="@IconColor" />
+        }
+        <div style="flex:1; min-width:0;">
+            <div class="stat-card__label">@Label</div>
+            <div class="stat-card__value" style="@(string.IsNullOrEmpty(ValueColor) ? "" : $"color:{ValueColor};")">
+                @Value
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Hint))
+            {
+                <div class="stat-card__hint">@Hint</div>
+            }
+        </div>
+    </FluentStack>
+</FluentCard>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string? ValueColor { get; set; }
+    [Parameter] public Icon? Icon { get; set; }
+    [Parameter] public Color IconColor { get; set; } = Color.Accent;
+}

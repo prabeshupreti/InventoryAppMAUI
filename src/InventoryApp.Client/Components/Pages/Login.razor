@@ -1,0 +1,117 @@
+@page "/login"
+@layout EmptyLayout
+@using Microsoft.AspNetCore.Components.Web
+@inject InventoryAuthStateProvider AuthProvider
+@inject NavigationManager Navigation
+@inject IToastService ToastService
+
+<PageTitle>Sign in - Inventory Manager</PageTitle>
+
+<div class="login-shell">
+    <FluentCard Class="login-card">
+        <div class="login-brand">
+            <FluentIcon Value="@(new Icons.Filled.Size24.BoxMultiple())" Color="Color.Accent" />
+            <FluentLabel Typo="Typography.H4">Inventory Manager</FluentLabel>
+        </div>
+        <FluentLabel Typo="Typography.Body" Color="Color.Disabled">
+            Sign in to manage stock, purchases and sales.
+        </FluentLabel>
+
+        <div style="height:20px"></div>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <FluentMessageBar Intent="@MessageIntent.Error" AllowDismiss="true"
+                              OnDismiss="@(() => _error = null)" Class="mb-2">
+                @_error
+            </FluentMessageBar>
+        }
+
+        @* Keyboard-friendly: Enter submits from either field. *@
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="14" @onkeydown="HandleKeyDown">
+            <FluentTextField @bind-Value="_username"
+                             Label="Username"
+                             Placeholder="admin"
+                             Required="true"
+                             AutoComplete="username"
+                             Disabled="_busy"
+                             Style="width:100%" />
+
+            <FluentTextField @bind-Value="_password"
+                             Label="Password"
+                             TextFieldType="TextFieldType.Password"
+                             Placeholder="Your password"
+                             Required="true"
+                             AutoComplete="current-password"
+                             Disabled="_busy"
+                             Style="width:100%" />
+
+            <FluentButton Appearance="Appearance.Accent"
+                          Loading="_busy"
+                          Disabled="@(_busy || string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_password))"
+                          OnClick="SignInAsync"
+                          Style="width:100%">
+                Sign in
+            </FluentButton>
+        </FluentStack>
+
+        <div class="login-hint">
+            <strong>Sample accounts</strong><br />
+            <code>admin</code> / <code>Admin@@123</code> - full access<br />
+            <code>manager</code> / <code>Manager@@123</code> - inventory manager<br />
+            <code>staff</code> / <code>Staff@@123</code> - sales and read-only
+        </div>
+
+        <div class="login-hint">
+            Connecting to <code>@ApiSettings.BaseAddress</code>
+        </div>
+    </FluentCard>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private string _username = string.Empty;
+    private string _password = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !_busy)
+        {
+            await SignInAsync();
+        }
+    }
+
+    private async Task SignInAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_password))
+        {
+            _error = "Enter both a username and a password.";
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            await AuthProvider.LoginAsync(_username.Trim(), _password);
+            ToastService.ShowSuccess("Signed in successfully.");
+
+            var target = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : $"/{ReturnUrl.TrimStart('/')}";
+            Navigation.NavigateTo(target, replace: true);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _password = string.Empty;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

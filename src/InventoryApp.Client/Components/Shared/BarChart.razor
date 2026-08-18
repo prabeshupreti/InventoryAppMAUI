@@ -1,0 +1,50 @@
+@* Fluent UI Blazor v4 ships no chart component, so this renders bars from design tokens
+   rather than adding a charting dependency to a cross-platform MAUI app. *@
+
+@if (Points.Count == 0)
+{
+    <div class="state-block" style="padding:24px;">
+        <span>No data for this period.</span>
+    </div>
+}
+else
+{
+    <div class="chart">
+        @foreach (var point in Points)
+        {
+            <div class="chart-row">
+                <span class="chart-row__label" title="@point.Label">@point.Label</span>
+                <div class="chart-row__track">
+                    <div class="chart-row__fill @(UseAltColor ? "chart-row__fill--alt" : "")"
+                         style="width:@(Percentage(point.Value).ToString("0.##", CultureInfo.InvariantCulture))%"></div>
+                </div>
+                <span class="chart-row__value">@Formatter(point.Value)</span>
+            </div>
+
+            @if (ShowSecondary)
+            {
+                <div class="chart-row">
+                    <span class="chart-row__label"></span>
+                    <div class="chart-row__track">
+                        <div class="chart-row__fill chart-row__fill--alt"
+                             style="width:@(Percentage(point.SecondaryValue).ToString("0.##", CultureInfo.InvariantCulture))%"></div>
+                    </div>
+                    <span class="chart-row__value">@Formatter(point.SecondaryValue)</span>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<DashboardSeriesPoint> Points { get; set; } = [];
+    [Parameter] public bool ShowSecondary { get; set; }
+    [Parameter] public bool UseAltColor { get; set; }
+    [Parameter] public Func<double, string> Formatter { get; set; } = FormatHelpers.MoneyCompact;
+
+    private double Max => Math.Max(
+        Points.Max(p => Math.Max(p.Value, ShowSecondary ? p.SecondaryValue : 0)),
+        1);
+
+    private double Percentage(double value) => Math.Clamp(value / Max * 100d, 0, 100);
+}

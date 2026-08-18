@@ -1,0 +1,135 @@
+@page "/stock/alerts"
+@attribute [Authorize(Policy = Permissions.ViewStock)]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+@inject AppState AppState
+@inject IDialogService DialogService
+
+<PageTitle>Low stock - Inventory Manager</PageTitle>
+
+<PageHeading Title="Low stock alerts"
+             Subtitle="Products at or below their minimum level"
+             Breadcrumbs="@(new List<PageHeading.Crumb> { new("Stock", "/stock") })">
+    <Actions>
+        <FluentButton IconStart="@(new Icons.Regular.Size16.ArrowSync())"
+                      Loading="_loading" Disabled="_loading" OnClick="LoadAsync">
+            Refresh
+        </FluentButton>
+    </Actions>
+</PageHeading>
+
+@if (_loading && _items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Checking stock levels..." />
+}
+else if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_items.Count == 0)
+{
+    <StateBlock State="StateBlock.BlockState.Empty"
+                Title="Everything is well stocked"
+                Message="No product is at or below its minimum level right now." />
+}
+else
+{
+    <FluentMessageBar Intent="@MessageIntent.Warning" Class="mb-2"
+                      Title="@($"{_items.Count} product(s) need attention")">
+        @_outOfStockCount are completely out of stock.
+    </FluentMessageBar>
+
+    <FluentCard>
+        <div class="grid-scroll">
+            <FluentDataGrid Items="@_items.AsQueryable()" TGridItem="LowStockAlert"
+                            GridTemplateColumns="1fr 2fr 1.5fr 0.8fr 0.8fr 1fr 0.8fr">
+                <PropertyColumn Property="@(a => a.Sku)" Title="SKU" />
+
+                <TemplateColumn Title="Product">
+                    <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{context.ProductId}")">
+                        @context.Name
+                    </FluentAnchor>
+                </TemplateColumn>
+
+                <PropertyColumn Property="@(a => a.SupplierName)" Title="Supplier" />
+
+                <TemplateColumn Title="On hand" Align="Align.End">
+                    <span class="numeric" style="color:@(context.OutOfStock ? "var(--error)" : "var(--warning)")">
+                        @FormatHelpers.Number(context.CurrentStock)
+                    </span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Minimum" Align="Align.End">
+                    <span class="numeric">@FormatHelpers.Number(context.MinimumStock)</span>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <FluentBadge Appearance="Appearance.Neutral"
+                                 BackgroundColor="@(context.OutOfStock ? "var(--error)" : "var(--warning)")"
+                                 Color="white">
+                        @(context.OutOfStock ? "Out of stock" : "Low stock")
+                    </FluentBadge>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Actions" Align="Align.End">
+                    <AuthorizeView Policy="@Permissions.ReceiveStock" Context="auth">
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Icons.Regular.Size16.Add())"
+                                      Title="Receive stock"
+                                      OnClick="@(() => ReceiveAsync(context.ProductId))" />
+                    </AuthorizeView>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+    </FluentCard>
+}
+
+@code {
+    private readonly List<LowStockAlert> _items = [];
+    private bool _loading = true;
+    private string? _error;
+    private int _outOfStockCount;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var response = await Api.GetLowStockAlertsAsync();
+            _items.Clear();
+            _items.AddRange(response.Items);
+            _outOfStockCount = _items.Count(i => i.OutOfStock);
+            AppState.LowStockCount = _items.Count;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReceiveAsync(int productId)
+    {
+        var product = await Api.GetProductAsync(productId);
+
+        var dialog = await DialogService.ShowDialogAsync<StockOperationDialog>(product, new DialogParameters
+        {
+            Title = $"Receive stock - {product.Name}",
+            PreventDismissOnOverlayClick = true,
+            Width = "min(560px, 94vw)"
+        });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await LoadAsync();
+        }
+    }
+}

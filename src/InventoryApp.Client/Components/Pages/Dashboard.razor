@@ -1,0 +1,268 @@
+@page "/"
+@attribute [Authorize(Policy = Permissions.ViewDashboard)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject AppState AppState
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard - Inventory Manager</PageTitle>
+
+<PageHeading Title="Dashboard" Subtitle="@_subtitle">
+    <Actions>
+        <FluentButton IconStart="@(new Icons.Regular.Size16.ArrowSync())"
+                      Loading="_loading" Disabled="_loading" OnClick="LoadAsync">
+            Refresh
+        </FluentButton>
+    </Actions>
+</PageHeading>
+
+@if (_loading && _data is null)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading inventory overview..." />
+}
+else if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_data is not null)
+{
+    <div class="stat-grid">
+        <StatCard Label="Total products" Value="@FormatHelpers.Number(_data.TotalProducts)"
+                  Hint="@($"{FormatHelpers.Number(_data.TotalUnitsInStock)} units on hand")"
+                  Icon="@(new Icons.Regular.Size24.BoxMultiple())" />
+
+        <StatCard Label="Inventory value" Value="@FormatHelpers.Money(_data.TotalInventoryValue)"
+                  Hint="@($"Retail {FormatHelpers.Money(_data.TotalRetailValue)}")"
+                  Icon="@(new Icons.Regular.Size24.Money())" />
+
+        <StatCard Label="Low stock" Value="@FormatHelpers.Number(_data.LowStockCount)"
+                  Hint="At or below minimum level"
+                  ValueColor="@(_data.LowStockCount > 0 ? "var(--warning)" : null)"
+                  Icon="@(new Icons.Regular.Size24.Warning())" IconColor="Color.Warning" />
+
+        <StatCard Label="Out of stock" Value="@FormatHelpers.Number(_data.OutOfStockCount)"
+                  Hint="Needs reordering now"
+                  ValueColor="@(_data.OutOfStockCount > 0 ? "var(--error)" : null)"
+                  Icon="@(new Icons.Regular.Size24.DismissCircle())" IconColor="Color.Error" />
+
+        <StatCard Label="Categories" Value="@FormatHelpers.Number(_data.TotalCategories)"
+                  Hint="Active groupings" Icon="@(new Icons.Regular.Size24.Tag())" />
+
+        <StatCard Label="Suppliers" Value="@FormatHelpers.Number(_data.TotalSuppliers)"
+                  Hint="On record" Icon="@(new Icons.Regular.Size24.BuildingShop())" />
+
+        <StatCard Label="Purchases (30d)" Value="@FormatHelpers.Money(_data.PurchasesLast30Days)"
+                  Hint="Received orders" Icon="@(new Icons.Regular.Size24.Cart())" />
+
+        <StatCard Label="Sales (30d)" Value="@FormatHelpers.Money(_data.SalesLast30Days)"
+                  Hint="Completed sales" Icon="@(new Icons.Regular.Size24.Receipt())" />
+    </div>
+
+    <div class="panel-grid">
+        <FluentCard>
+            <h2 class="panel-title">Stock value by category</h2>
+            <BarChart Points="@_data.ValueByCategory" />
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Purchases vs sales (6 months)</h2>
+            <BarChart Points="@_data.MonthlyTrade" ShowSecondary="true" />
+            <FluentStack HorizontalGap="16" Class="mt-2">
+                <FluentStack HorizontalGap="6" VerticalAlignment="VerticalAlignment.Center" Width="auto">
+                    <span style="width:10px;height:10px;border-radius:2px;background:var(--accent-fill-rest);display:inline-block"></span>
+                    <FluentLabel Typo="Typography.Body">Purchases</FluentLabel>
+                </FluentStack>
+                <FluentStack HorizontalGap="6" VerticalAlignment="VerticalAlignment.Center" Width="auto">
+                    <span style="width:10px;height:10px;border-radius:2px;background:var(--success);display:inline-block"></span>
+                    <FluentLabel Typo="Typography.Body">Sales</FluentLabel>
+                </FluentStack>
+            </FluentStack>
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Needs attention</h2>
+            @if (_data.LowStockProducts.Count == 0)
+            {
+                <FluentLabel Color="Color.Disabled">Every product is above its minimum level.</FluentLabel>
+            }
+            else
+            {
+                <div class="line-list">
+                    @foreach (var product in _data.LowStockProducts)
+                    {
+                        <div class="line-row">
+                            <div>
+                                <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{product.Id}")">
+                                    @product.Name
+                                </FluentAnchor>
+                                <div class="line-row__meta">@product.Sku</div>
+                            </div>
+                            <div style="text-align:right">
+                                <FluentBadge Appearance="Appearance.Neutral"
+                                             BackgroundColor="@(product.CurrentStock <= 0 ? "var(--error)" : "var(--warning)")"
+                                             Color="white">
+                                    @product.CurrentStock / @product.MinimumStock
+                                </FluentBadge>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <FluentButton Class="mt-2" Appearance="Appearance.Stealth"
+                              IconEnd="@(new Icons.Regular.Size16.ChevronRight())"
+                              OnClick="@(() => Navigation.NavigateTo("/stock/alerts"))">
+                    View all alerts
+                </FluentButton>
+            }
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Recently added products</h2>
+            @if (_data.RecentlyAdded.Count == 0)
+            {
+                <FluentLabel Color="Color.Disabled">No products yet.</FluentLabel>
+            }
+            else
+            {
+                <div class="line-list">
+                    @foreach (var product in _data.RecentlyAdded)
+                    {
+                        <div class="line-row">
+                            <div>
+                                <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/products/{product.Id}")">
+                                    @product.Name
+                                </FluentAnchor>
+                                <div class="line-row__meta">
+                                    @product.Sku &middot; added @FormatHelpers.Date(product.CreatedAtUtc)
+                                </div>
+                            </div>
+                            <div class="numeric">@FormatHelpers.Number(product.CurrentStock)</div>
+                        </div>
+                    }
+                </div>
+            }
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Recent stock movements</h2>
+            @if (_data.RecentMovements.Count == 0)
+            {
+                <FluentLabel Color="Color.Disabled">No movements recorded yet.</FluentLabel>
+            }
+            else
+            {
+                <div class="line-list">
+                    @foreach (var movement in _data.RecentMovements)
+                    {
+                        <div class="line-row">
+                            <div>
+                                <strong>@movement.ProductName</strong>
+                                <div class="line-row__meta">
+                                    @FormatHelpers.MovementLabel(movement.MovementType)
+                                    &middot; @movement.UserName
+                                    &middot; @FormatHelpers.DateTimeShort(movement.CreatedAtUtc)
+                                </div>
+                            </div>
+                            <div class="numeric" style="color:@FormatHelpers.MovementColor(movement.MovementType)">
+                                @FormatHelpers.Signed(movement.Quantity)
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </FluentCard>
+
+        <FluentCard>
+            <h2 class="panel-title">Recent documents</h2>
+            <FluentTabs>
+                <FluentTab Label="Purchases" Id="tab-purchases">
+                    @if (_data.RecentPurchases.Count == 0)
+                    {
+                        <FluentLabel Color="Color.Disabled">No purchase orders yet.</FluentLabel>
+                    }
+                    else
+                    {
+                        <div class="line-list">
+                            @foreach (var doc in _data.RecentPurchases)
+                            {
+                                <div class="line-row">
+                                    <div>
+                                        <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/purchases/{doc.Id}")">
+                                            @doc.Number
+                                        </FluentAnchor>
+                                        <div class="line-row__meta">@doc.Party &middot; @doc.Status</div>
+                                    </div>
+                                    <div class="numeric">@FormatHelpers.Money(doc.Total)</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </FluentTab>
+                <FluentTab Label="Sales" Id="tab-sales">
+                    @if (_data.RecentSales.Count == 0)
+                    {
+                        <FluentLabel Color="Color.Disabled">No sales yet.</FluentLabel>
+                    }
+                    else
+                    {
+                        <div class="line-list">
+                            @foreach (var doc in _data.RecentSales)
+                            {
+                                <div class="line-row">
+                                    <div>
+                                        <FluentAnchor Appearance="Appearance.Hypertext" Href="@($"/sales/{doc.Id}")">
+                                            @doc.Number
+                                        </FluentAnchor>
+                                        <div class="line-row__meta">@doc.Party &middot; @doc.Status</div>
+                                    </div>
+                                    <div class="numeric">@FormatHelpers.Money(doc.Total)</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </FluentTab>
+            </FluentTabs>
+        </FluentCard>
+    </div>
+}
+
+@code {
+    private DashboardResponse? _data;
+    private bool _loading = true;
+    private string? _error;
+    private string _subtitle = "Live overview of your inventory";
+
+    private CancellationTokenSource? _cts;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _data = await Api.GetDashboardAsync(_cts.Token);
+            AppState.LowStockCount = _data.LowStockCount + _data.OutOfStockCount;
+            _subtitle = $"Updated {DateTime.Now:HH:mm}";
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException)
+        {
+            // superseded by a newer refresh
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

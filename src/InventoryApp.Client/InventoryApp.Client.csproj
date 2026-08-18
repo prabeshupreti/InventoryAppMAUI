@@ -1,0 +1,64 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+	<PropertyGroup>
+		<TargetFrameworks>net10.0-android36.1;net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
+		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+
+		<OutputType>Exe</OutputType>
+		<RootNamespace>InventoryApp.Client</RootNamespace>
+		<UseMaui>true</UseMaui>
+		<MauiVersion>10.0.00</MauiVersion>
+		<SingleProject>true</SingleProject>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<EnableDefaultCssItems>false</EnableDefaultCssItems>
+
+		<ApplicationTitle>Inventory Manager</ApplicationTitle>
+		<ApplicationId>com.inventoryapp.client</ApplicationId>
+		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<ApplicationVersion>1</ApplicationVersion>
+
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#0F6CBD" />
+
+		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#0F6CBD" BaseSize="128,128" />
+
+		<MauiImage Include="Resources\Images\*" />
+		<MauiFont Include="Resources\Fonts\*" />
+		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.90" />
+
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.0.100" />
+
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.11" />
+
+		<!-- Fluent UI Blazor -->
+		<PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.14.4" />
+
+		<PackageReference Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="4.14.4" />
+
+		<!-- gRPC over gRPC-Web -->
+		<PackageReference Include="Grpc.Net.Client" Version="2.83.0" />
+
+		<PackageReference Include="Grpc.Net.Client.Web" Version="2.83.0" />
+
+		<PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.11" />
+
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\InventoryApp.Contracts\InventoryApp.Contracts.csproj" />
+	</ItemGroup>
+
+</Project>

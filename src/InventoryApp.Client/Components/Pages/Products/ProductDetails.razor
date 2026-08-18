@@ -1,0 +1,262 @@
+@page "/products/{ProductId:int}"
+@attribute [Authorize(Policy = Permissions.ViewProducts)]
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject InventoryApiClient Api
+@inject IDialogService DialogService
+@inject IToastService ToastService
+@inject NavigationManager Navigation
+
+<PageTitle>@(_product?.Name ?? "Product") - Inventory Manager</PageTitle>
+
+@if (_loading && _product is null)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading product..." />
+}
+else if (_error is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_product is not null)
+{
+    <PageHeading Title="@_product.Name"
+                 Subtitle="@($"{_product.Sku} · {_product.CategoryName} · {_product.SupplierName}")"
+                 Breadcrumbs="@(new List<PageHeading.Crumb> { new("Products", "/products") })">
+        <Actions>
+            <AuthorizeView Policy="@Permissions.ManageProducts">
+                <FluentButton IconStart="@(new Icons.Regular.Size16.Edit())" OnClick="EditAsync">Edit</FluentButton>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.ReceiveStock">
+                <FluentButton Appearance="Appearance.Accent"
+                              IconStart="@(new Icons.Regular.Size16.ArrowSwap())"
+                              OnClick="OpenStockDialogAsync">
+                    Move stock
+                </FluentButton>
+            </AuthorizeView>
+        </Actions>
+    </PageHeading>
+
+    <div class="stat-grid">
+        <StatCard Label="Current stock"
+                  Value="@($"{FormatHelpers.Number(_product.CurrentStock)} {_product.UnitOfMeasure}")"
+                  Hint="@FormatHelpers.StockStatusLabel(_product.StockStatus)"
+                  ValueColor="@FormatHelpers.StockStatusColor(_product.StockStatus)"
+                  Icon="@(new Icons.Regular.Size24.BoxMultiple())" />
+
+        <StatCard Label="Stock value" Value="@FormatHelpers.Money(_product.StockValue)"
+                  Hint="@($"At cost {FormatHelpers.Money(_product.CostPrice)}")"
+                  Icon="@(new Icons.Regular.Size24.Money())" />
+
+        <StatCard Label="Selling price" Value="@FormatHelpers.Money(_product.UnitPrice)"
+                  Hint="@($"Margin {Margin:P1}")" Icon="@(new Icons.Regular.Size24.Tag())" />
+
+        <StatCard Label="Reorder level"
+                  Value="@($"{FormatHelpers.Number(_product.MinimumStock)} / {FormatHelpers.Number(_product.MaximumStock)}"
+
+                  )"
+                  Hint="Minimum / maximum" Icon="@(new Icons.Regular.Size24.Warning())" />
+    </div>
+
+    <div class="panel-grid">
+        <FluentCard>
+            <h2 class="panel-title">Details</h2>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                <DetailRow Label="Description" Value="@(string.IsNullOrWhiteSpace(_product.Description) ? "-" : _product.Description)" />
+                <DetailRow Label="Barcode" Value="@(string.IsNullOrWhiteSpace(_product.Barcode) ? "-" : _product.Barcode)" />
+                <DetailRow Label="Location" Value="@_product.Location" />
+                <DetailRow Label="Unit of measure" Value="@_product.UnitOfMeasure" />
+                <DetailRow Label="Status" Value="@(_product.IsActive ? "Active" : "Inactive")" />
+                <DetailRow Label="Created" Value="@FormatHelpers.DateTimeShort(_product.CreatedAtUtc)" />
+                <DetailRow Label="Last updated" Value="@FormatHelpers.DateTimeShort(_product.UpdatedAtUtc)" />
+            </FluentStack>
+        </FluentCard>
+
+        <FluentCard style="grid-column: span 2; min-width:0;">
+            <FluentStack VerticalAlignment="VerticalAlignment.Center">
+                <h2 class="panel-title" style="margin:0">Movement history</h2>
+                <FluentSpacer />
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Icons.Regular.Size16.ArrowSync())"
+                              Disabled="_historyLoading"
+                              OnClick="LoadHistoryAsync">Refresh</FluentButton>
+            </FluentStack>
+
+            @if (_historyLoading && _movements.Count == 0)
+            {
+                <StateBlock State="StateBlock.BlockState.Loading" Message="Loading history..." />
+            }
+            else if (_movements.Count == 0)
+            {
+                <StateBlock State="StateBlock.BlockState.Empty"
+                            Title="No movements yet"
+                            Message="Stock changes for this product will appear here." />
+            }
+            else
+            {
+                <div class="grid-scroll">
+                    <FluentDataGrid Items="@_movements.AsQueryable()" TGridItem="StockMovementDto"
+                                    GridTemplateColumns="1.3fr 1fr 0.7fr 0.9fr 1.6fr 1fr">
+                        <TemplateColumn Title="Date">
+                            @FormatHelpers.DateTimeShort(context.CreatedAtUtc)
+                        </TemplateColumn>
+                        <TemplateColumn Title="Type">
+                            <FluentBadge Appearance="Appearance.Neutral"
+                                         BackgroundColor="@FormatHelpers.MovementColor(context.MovementType)"
+                                         Color="white">
+                                @FormatHelpers.MovementLabel(context.MovementType)
+                            </FluentBadge>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Qty" Align="Align.End">
+                            <span class="numeric" style="color:@FormatHelpers.MovementColor(context.MovementType)">
+                                @FormatHelpers.Signed(context.Quantity)
+                            </span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Balance" Align="Align.End">
+                            <span class="numeric">@context.PreviousQuantity &rarr; @context.NewQuantity</span>
+                        </TemplateColumn>
+                        <PropertyColumn Property="@(m => m.Reason)" Title="Reason" />
+                        <PropertyColumn Property="@(m => m.UserName)" Title="User" />
+                    </FluentDataGrid>
+                </div>
+
+                <FluentStack Class="mt-2" VerticalAlignment="VerticalAlignment.Center">
+                    <FluentLabel Color="Color.Disabled" Typo="Typography.Body">
+                        Showing @_movements.Count of @(_historyPageInfo?.TotalCount ?? 0) movement(s)
+                    </FluentLabel>
+                    <FluentSpacer />
+                    @if (_historyPageInfo is not null && _historyPage < _historyPageInfo.TotalPages)
+                    {
+                        <FluentButton Loading="_historyLoading" OnClick="LoadMoreHistoryAsync">Load more</FluentButton>
+                    }
+                </FluentStack>
+            }
+        </FluentCard>
+    </div>
+}
+
+@code {
+    [Parameter] public int ProductId { get; set; }
+
+    private ProductDto? _product;
+    private readonly List<StockMovementDto> _movements = [];
+    private PageInfo? _historyPageInfo;
+    private int _historyPage = 1;
+
+    private bool _loading = true;
+    private bool _historyLoading;
+    private string? _error;
+    private CancellationTokenSource? _cts;
+
+    private double Margin => _product is { UnitPrice: > 0 }
+        ? (_product.UnitPrice - _product.CostPrice) / _product.UnitPrice
+        : 0;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _movements.Clear();
+        _historyPage = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _product = await Api.GetProductAsync(ProductId, _cts.Token);
+            await LoadHistoryAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        _historyPage = 1;
+        _movements.Clear();
+        await FetchHistoryAsync();
+    }
+
+    private Task LoadMoreHistoryAsync()
+    {
+        _historyPage++;
+        return FetchHistoryAsync();
+    }
+
+    private async Task FetchHistoryAsync()
+    {
+        _historyLoading = true;
+
+        try
+        {
+            var response = await Api.GetProductHistoryAsync(new ProductHistoryRequest
+            {
+                ProductId = ProductId,
+                Page = new PageRequest { Page = _historyPage, PageSize = 15 }
+            });
+
+            _movements.AddRange(response.Items);
+            _historyPageInfo = response.PageInfo;
+        }
+        catch (ApiException ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            _historyLoading = false;
+        }
+    }
+
+    private async Task EditAsync()
+    {
+        if (_product is null) return;
+
+        var dialog = await DialogService.ShowDialogAsync<ProductEditor>(_product, new DialogParameters
+        {
+            Title = $"Edit {_product.Name}",
+            PreventDismissOnOverlayClick = true,
+            Width = "min(760px, 94vw)"
+        });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task OpenStockDialogAsync()
+    {
+        if (_product is null) return;
+
+        var dialog = await DialogService.ShowDialogAsync<InventoryApp.Client.Components.Pages.Stock.StockOperationDialog>(
+            _product,
+            new DialogParameters
+            {
+                Title = $"Move stock - {_product.Name}",
+                PreventDismissOnOverlayClick = true,
+                Width = "min(560px, 94vw)"
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            await LoadAsync();
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

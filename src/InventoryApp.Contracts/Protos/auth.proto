@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package inventory.auth;
+option csharp_namespace = "InventoryApp.Contracts.Auth";
+
+import "common.proto";
+
+service AuthenticationService {
+  rpc Login (LoginRequest) returns (LoginResponse);
+  rpc GetCurrentUser (inventory.common.Empty) returns (UserDto);
+  rpc ChangePassword (ChangePasswordRequest) returns (inventory.common.OperationResult);
+  rpc ListUsers (inventory.common.PageRequest) returns (ListUsersResponse);
+  rpc CreateUser (CreateUserRequest) returns (UserDto);
+  rpc UpdateUser (UpdateUserRequest) returns (UserDto);
+  rpc DeleteUser (inventory.common.IdRequest) returns (inventory.common.OperationResult);
+}
+
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_ADMINISTRATOR = 1;
+  USER_ROLE_INVENTORY_MANAGER = 2;
+  USER_ROLE_STAFF = 3;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string access_token = 1;
+  string expires_at_utc = 2;
+  UserDto user = 3;
+  repeated string permissions = 4;
+}
+
+message UserDto {
+  int32 id = 1;
+  string username = 2;
+  string email = 3;
+  string full_name = 4;
+  UserRole role = 5;
+  bool is_active = 6;
+  string created_at_utc = 7;
+  optional string last_login_at_utc = 8;
+}
+
+message ListUsersResponse {
+  repeated UserDto items = 1;
+  inventory.common.PageInfo page_info = 2;
+}
+
+message CreateUserRequest {
+  string username = 1;
+  string email = 2;
+  string full_name = 3;
+  string password = 4;
+  UserRole role = 5;
+  bool is_active = 6;
+}
+
+message UpdateUserRequest {
+  int32 id = 1;
+  string email = 2;
+  string full_name = 3;
+  UserRole role = 4;
+  bool is_active = 5;
+  optional string new_password = 6;
+}
+
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}

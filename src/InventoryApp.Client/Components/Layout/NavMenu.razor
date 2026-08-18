@@ -1,0 +1,88 @@
+@implements IDisposable
+@inject AppState AppState
+
+<div class="nav-shell @(Expanded ? "nav-shell--open" : "nav-shell--closed")">
+    <FluentNavMenu Width="240" Title="Main navigation" Expanded="true" Class="nav-menu">
+
+        <FluentNavLink Href="/" Match="NavLinkMatch.All"
+                       Icon="@(new Icons.Regular.Size20.Board())">Dashboard</FluentNavLink>
+
+        <AuthorizeView Policy="@Permissions.ViewProducts">
+            <FluentNavLink Href="/products" Icon="@(new Icons.Regular.Size20.BoxMultiple())">Products</FluentNavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.ViewCatalog">
+            <FluentNavGroup Title="Catalogue" Icon="@(new Icons.Regular.Size20.Apps())" Expanded="true">
+                <FluentNavLink Href="/categories" Icon="@(new Icons.Regular.Size20.Tag())">Categories</FluentNavLink>
+                <FluentNavLink Href="/suppliers" Icon="@(new Icons.Regular.Size20.BuildingShop())">Suppliers</FluentNavLink>
+            </FluentNavGroup>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.ViewStock">
+            <FluentNavLink Href="/stock" Icon="@(new Icons.Regular.Size20.ArrowSwap())">
+                Stock movements
+            </FluentNavLink>
+            <FluentNavLink Href="/stock/alerts" Icon="@(new Icons.Regular.Size20.Warning())">
+                Low stock
+                @if (AppState.LowStockCount > 0)
+                {
+                    <FluentBadge Appearance="Appearance.Accent" Circular="true" Class="nav-badge">
+                        @AppState.LowStockCount
+                    </FluentBadge>
+                }
+            </FluentNavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.ViewPurchases">
+            <FluentNavLink Href="/purchases" Icon="@(new Icons.Regular.Size20.Cart())">Purchases</FluentNavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.ViewSales">
+            <FluentNavLink Href="/sales" Icon="@(new Icons.Regular.Size20.Receipt())">Sales</FluentNavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.ViewReports">
+            <FluentNavLink Href="/reports" Icon="@(new Icons.Regular.Size20.DocumentTable())">Reports</FluentNavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.ManageUsers">
+            <FluentNavLink Href="/users" Icon="@(new Icons.Regular.Size20.People())">Users</FluentNavLink>
+        </AuthorizeView>
+
+    </FluentNavMenu>
+</div>
+
+<style>
+    .nav-shell {
+        border-right: 1px solid var(--neutral-stroke-divider-rest);
+        background: var(--neutral-layer-1);
+        height: 100%;
+        overflow-y: auto;
+        flex: 0 0 auto;
+    }
+
+    .nav-badge { margin-left: auto; }
+
+    @@media (max-width: 860px) {
+        .nav-shell {
+            position: absolute;
+            z-index: 20;
+            height: calc(100% - 50px);
+            box-shadow: var(--elevation-shadow-flyout);
+            transition: transform 180ms ease;
+        }
+
+        .nav-shell--closed { transform: translateX(-105%); }
+        .nav-shell--open { transform: translateX(0); }
+    }
+</style>
+
+@code {
+    [Parameter] public bool Expanded { get; set; } = true;
+
+    protected override void OnInitialized() => AppState.Changed += OnStateChanged;
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => AppState.Changed -= OnStateChanged;
+}

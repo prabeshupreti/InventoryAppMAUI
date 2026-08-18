@@ -1,0 +1,269 @@
+@page "/purchases/new"
+@page "/purchases/{PurchaseId:int}/edit"
+@attribute [Authorize(Policy = Permissions.ManagePurchases)]
+@using Microsoft.AspNetCore.Authorization
+@inject InventoryApiClient Api
+@inject NavigationManager Navigation
+@inject IToastService ToastService
+
+<PageTitle>@(IsNew ? "New purchase order" : "Edit purchase order")</PageTitle>
+
+<PageHeading Title="@(IsNew ? "New purchase order" : $"Edit {_orderNumber}")"
+             Subtitle="Draft orders can be changed freely. Receiving one adds the goods to stock."
+             Breadcrumbs="@(new List<PageHeading.Crumb> { new("Purchases", "/purchases") })" />
+
+@if (_loading)
+{
+    <StateBlock State="StateBlock.BlockState.Loading" Message="Loading order..." />
+}
+else if (_loadError is not null)
+{
+    <StateBlock State="StateBlock.BlockState.Error" Message="@_loadError" OnRetry="LoadAsync" />
+}
+else
+{
+    <DocumentEditor TLine="PurchaseLine"
+                    Lines="_lines"
+                    Products="_products"
+                    PartyLabel="Supplier *"
+                    PartyOptions="_suppliers"
+                    @bind-PartyId="_supplierId"
+                    @bind-DocumentDate="_orderDate"
+                    @bind-TaxRate="_taxRate"
+                    @bind-Discount="_discount"
+                    @bind-Notes="_notes"
+                    PriceLabel="Unit cost"
+                    Busy="_busy"
+                    Errors="_errors"
+                    ShowExpectedDate="true"
+                    @bind-ExpectedDate="_expectedDate"
+                    OnAddLine="AddLine"
+                    OnRemoveLine="RemoveLine"
+                    OnProductChosen="OnProductChosenAsync">
+        <FooterActions>
+            <FluentButton Appearance="Appearance.Neutral" Disabled="_busy"
+                          OnClick="@(() => Navigation.NavigateTo("/purchases"))">
+                Cancel
+            </FluentButton>
+            <FluentButton Appearance="Appearance.Accent" Loading="_busy" Disabled="_busy"
+                          OnClick="SaveAsync">
+                @(IsNew ? "Create draft" : "Save changes")
+            </FluentButton>
+        </FooterActions>
+    </DocumentEditor>
+}
+
+@code {
+    [Parameter] public int? PurchaseId { get; set; }
+
+    private bool IsNew => PurchaseId is null or 0;
+
+    private readonly List<PurchaseLine> _lines = [];
+    private List<LookupItem> _suppliers = [];
+    private List<LookupItem> _products = [];
+    private readonly List<string> _errors = [];
+
+    private string? _supplierId;
+    private DateTime? _orderDate = DateTime.Today;
+    private DateTime? _expectedDate = DateTime.Today.AddDays(14);
+    private decimal _taxRate = 13;
+    private decimal _discount;
+    private string? _notes = string.Empty;
+    private string _orderNumber = string.Empty;
+
+    private bool _loading = true;
+    private bool _busy;
+    private string? _loadError;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+
+        try
+        {
+            var suppliers = await Api.GetSupplierLookupAsync();
+            var products = await Api.GetProductLookupAsync(string.Empty);
+            _suppliers = suppliers.Items.ToList();
+            _products = products.Items.ToList();
+
+            if (!IsNew)
+            {
+                var order = await Api.GetPurchaseAsync(PurchaseId!.Value);
+
+                if (order.Status != PurchaseStatus.Draft)
+                {
+                    _loadError = $"{order.OrderNumber} is {FormatHelpers.PurchaseStatusLabel(order.Status).ToLowerInvariant()} " +
+                                 "and can no longer be edited.";
+                    return;
+                }
+
+                _orderNumber = order.OrderNumber;
+                _supplierId = order.SupplierId.ToString();
+                _orderDate = FormatHelpers.ToDateTime(order.OrderDateUtc);
+                _expectedDate = order.HasExpectedDateUtc ? FormatHelpers.ToDateTime(order.ExpectedDateUtc) : null;
+                _taxRate = (decimal)order.TaxRate;
+                _discount = (decimal)order.DiscountAmount;
+                _notes = order.Notes;
+
+                _lines.Clear();
+                foreach (var item in order.Items)
+                {
+                    _lines.Add(new PurchaseLine
+                    {
+                        ProductId = item.ProductId.ToString(),
+                        ProductName = $"{item.ProductSku} - {item.ProductName}",
+                        Quantity = item.Quantity,
+                        UnitPrice = (decimal)item.UnitCost
+                    });
+                }
+            }
+
+            if (_lines.Count == 0)
+            {
+                _lines.Add(new PurchaseLine());
+            }
+        }
+        catch (ApiException ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AddLine() => _lines.Add(new PurchaseLine());
+
+    private void RemoveLine(PurchaseLine line)
+    {
+        _lines.Remove(line);
+
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new PurchaseLine());
+        }
+    }
+
+    /// <summary>Pre-fills the cost from the product record so the user usually just types a quantity.</summary>
+    private async Task OnProductChosenAsync(PurchaseLine line)
+    {
+        if (!int.TryParse(line.ProductId, out var id) || id <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var product = await Api.GetProductAsync(id);
+            line.ProductName = $"{product.Sku} - {product.Name}";
+
+            if (line.UnitPrice == 0)
+            {
+                line.UnitPrice = (decimal)product.CostPrice;
+            }
+        }
+        catch (ApiException ex)
+        {
+            ToastService.ShowWarning(ex.Message);
+        }
+    }
+
+    private bool Validate()
+    {
+        _errors.Clear();
+
+        if (!int.TryParse(_supplierId, out var supplierId) || supplierId <= 0)
+        {
+            _errors.Add("Select a supplier.");
+        }
+
+        var valid = _lines.Where(l => int.TryParse(l.ProductId, out var id) && id > 0).ToList();
+
+        if (valid.Count == 0)
+        {
+            _errors.Add("Add at least one product line.");
+        }
+
+        if (valid.Any(l => l.Quantity <= 0))
+        {
+            _errors.Add("Every line needs a quantity greater than zero.");
+        }
+
+        if (valid.Any(l => l.UnitPrice < 0))
+        {
+            _errors.Add("Unit cost cannot be negative.");
+        }
+
+        if (_taxRate is < 0 or > 100)
+        {
+            _errors.Add("Tax rate must be between 0 and 100.");
+        }
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Validate())
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var request = new SavePurchaseRequest
+            {
+                SupplierId = int.Parse(_supplierId!),
+                OrderDateUtc = FormatHelpers.ToIso(_orderDate ?? DateTime.Today),
+                TaxRate = (double)_taxRate,
+                DiscountAmount = (double)_discount,
+                Notes = _notes ?? string.Empty
+            };
+
+            if (_expectedDate.HasValue)
+            {
+                request.ExpectedDateUtc = FormatHelpers.ToIso(_expectedDate.Value);
+            }
+
+            foreach (var line in _lines.Where(l => int.TryParse(l.ProductId, out var id) && id > 0))
+            {
+                request.Items.Add(new SavePurchaseItem
+                {
+                    ProductId = int.Parse(line.ProductId!),
+                    Quantity = line.Quantity,
+                    UnitCost = (double)line.UnitPrice
+                });
+            }
+
+            PurchaseOrderDto saved;
+
+            if (IsNew)
+            {
+                saved = await Api.CreatePurchaseAsync(request);
+                ToastService.ShowSuccess($"Draft {saved.OrderNumber} created.");
+            }
+            else
+            {
+                request.Id = PurchaseId!.Value;
+                saved = await Api.UpdatePurchaseAsync(request);
+                ToastService.ShowSuccess($"{saved.OrderNumber} updated.");
+            }
+
+            Navigation.NavigateTo($"/purchases/{saved.Id}");
+        }
+        catch (ApiException ex)
+        {
+            _errors.Add(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

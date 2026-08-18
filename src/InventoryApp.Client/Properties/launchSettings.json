@@ -1,0 +1,23 @@
+{
+  "profiles": {
+    "Windows Machine": {
+      "commandName": "MsixPackage",
+      "nativeDebugging": false
+    },
+    "Android Emulator": {
+      "commandName": "Project",
+      "commandLineArgs": "--runtime=android-arm64",
+      "workingDirectory": "$(MSBuildProjectDirectory)"
+    },
+    "iOS Simulator": {
+      "commandName": "Project",
+      "commandLineArgs": "--runtime=iossimulator-arm64",
+      "workingDirectory": "$(MSBuildProjectDirectory)"
+    },
+    "Mac Catalyst": {
+      "commandName": "Project",
+      "commandLineArgs": "--runtime=maccatalyst-arm64",
+      "workingDirectory": "$(MSBuildProjectDirectory)"
+    }
+  }
+}
