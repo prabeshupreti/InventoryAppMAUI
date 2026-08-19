@@ -1,84 +1,86 @@
 @implements IDisposable
 @inject AppState AppState
+@inject NavigationManager Navigation
 
-<div class="nav-shell @(Expanded ? "nav-shell--open" : "nav-shell--closed")">
-    <FluentNavMenu Width="240" Title="Main navigation" Expanded="true" Class="nav-menu">
+<nav class="nav-menu">
+    <NavItem Href="/" Match="NavLinkMatch.All"
+             Icon="@(new Icons.Regular.Size20.Board())" Label="Dashboard"
+             OnClick="@(() => OnNavigate.InvokeAsync())" />
 
-        <FluentNavLink Href="/" Match="NavLinkMatch.All"
-                       Icon="@(new Icons.Regular.Size20.Board())">Dashboard</FluentNavLink>
+    <AuthorizeView Policy="@Permissions.ViewProducts">
+        <NavItem Href="/products"
+                 Icon="@(new Icons.Regular.Size20.BoxMultiple())" Label="Products"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
 
-        <AuthorizeView Policy="@Permissions.ViewProducts">
-            <FluentNavLink Href="/products" Icon="@(new Icons.Regular.Size20.BoxMultiple())">Products</FluentNavLink>
-        </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.ViewCatalog">
+        <div class="nav-menu__group">Catalogue</div>
+        <NavItem Href="/categories"
+                 Icon="@(new Icons.Regular.Size20.Tag())" Label="Categories"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+        <NavItem Href="/suppliers"
+                 Icon="@(new Icons.Regular.Size20.Building())" Label="Suppliers"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
 
-        <AuthorizeView Policy="@Permissions.ViewCatalog">
-            <FluentNavGroup Title="Catalogue" Icon="@(new Icons.Regular.Size20.Apps())" Expanded="true">
-                <FluentNavLink Href="/categories" Icon="@(new Icons.Regular.Size20.Tag())">Categories</FluentNavLink>
-                <FluentNavLink Href="/suppliers" Icon="@(new Icons.Regular.Size20.BuildingShop())">Suppliers</FluentNavLink>
-            </FluentNavGroup>
-        </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.ViewStock">
+        <div class="nav-menu__group">Stock</div>
+        <NavItem Href="/stock"
+                 Icon="@(new Icons.Regular.Size20.ArrowSwap())" Label="Movements"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+        <NavItem Href="/stock/alerts"
+                 Icon="@(new Icons.Regular.Size20.Warning())" Label="Low stock"
+                 Badge="@(AppState.LowStockCount > 0 ? AppState.LowStockCount.ToString() : null)"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
 
-        <AuthorizeView Policy="@Permissions.ViewStock">
-            <FluentNavLink Href="/stock" Icon="@(new Icons.Regular.Size20.ArrowSwap())">
-                Stock movements
-            </FluentNavLink>
-            <FluentNavLink Href="/stock/alerts" Icon="@(new Icons.Regular.Size20.Warning())">
-                Low stock
-                @if (AppState.LowStockCount > 0)
-                {
-                    <FluentBadge Appearance="Appearance.Accent" Circular="true" Class="nav-badge">
-                        @AppState.LowStockCount
-                    </FluentBadge>
-                }
-            </FluentNavLink>
-        </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.ViewPurchases">
+        <div class="nav-menu__group">Trade</div>
+        <NavItem Href="/purchases"
+                 Icon="@(new Icons.Regular.Size20.Cart())" Label="Purchases"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
 
-        <AuthorizeView Policy="@Permissions.ViewPurchases">
-            <FluentNavLink Href="/purchases" Icon="@(new Icons.Regular.Size20.Cart())">Purchases</FluentNavLink>
-        </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.ViewSales">
+        <NavItem Href="/sales"
+                 Icon="@(new Icons.Regular.Size20.Receipt())" Label="Sales"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
 
-        <AuthorizeView Policy="@Permissions.ViewSales">
-            <FluentNavLink Href="/sales" Icon="@(new Icons.Regular.Size20.Receipt())">Sales</FluentNavLink>
-        </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.ViewReports">
+        <NavItem Href="/reports"
+                 Icon="@(new Icons.Regular.Size20.DocumentText())" Label="Reports"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
 
-        <AuthorizeView Policy="@Permissions.ViewReports">
-            <FluentNavLink Href="/reports" Icon="@(new Icons.Regular.Size20.DocumentTable())">Reports</FluentNavLink>
-        </AuthorizeView>
-
-        <AuthorizeView Policy="@Permissions.ManageUsers">
-            <FluentNavLink Href="/users" Icon="@(new Icons.Regular.Size20.People())">Users</FluentNavLink>
-        </AuthorizeView>
-
-    </FluentNavMenu>
-</div>
+    <AuthorizeView Policy="@Permissions.ManageUsers">
+        <div class="nav-menu__group">Administration</div>
+        <NavItem Href="/users"
+                 Icon="@(new Icons.Regular.Size20.People())" Label="Users"
+                 OnClick="@(() => OnNavigate.InvokeAsync())" />
+    </AuthorizeView>
+</nav>
 
 <style>
-    .nav-shell {
-        border-right: 1px solid var(--neutral-stroke-divider-rest);
-        background: var(--neutral-layer-1);
-        height: 100%;
-        overflow-y: auto;
-        flex: 0 0 auto;
+    .nav-menu {
+        display: flex;
+        flex-direction: column;
+        padding: 8px 6px 24px;
+        gap: 2px;
     }
 
-    .nav-badge { margin-left: auto; }
-
-    @@media (max-width: 860px) {
-        .nav-shell {
-            position: absolute;
-            z-index: 20;
-            height: calc(100% - 50px);
-            box-shadow: var(--elevation-shadow-flyout);
-            transition: transform 180ms ease;
-        }
-
-        .nav-shell--closed { transform: translateX(-105%); }
-        .nav-shell--open { transform: translateX(0); }
+    .nav-menu__group {
+        padding: 14px 12px 4px;
+        font-size: var(--type-ramp-minus-1-font-size);
+        color: var(--neutral-foreground-hint);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
     }
 </style>
 
 @code {
-    [Parameter] public bool Expanded { get; set; } = true;
+    [Parameter] public EventCallback OnNavigate { get; set; }
 
     protected override void OnInitialized() => AppState.Changed += OnStateChanged;
 

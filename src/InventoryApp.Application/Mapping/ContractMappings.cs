@@ -16,17 +16,26 @@ public static class ContractMappings
 
     public static decimal ToMoney(this double value) => decimal.Round((decimal)value, 2);
 
-    public static UserDto ToDto(this User user) => new()
+    public static UserDto ToDto(this User user)
     {
-        Id = user.Id,
-        Username = user.Username,
-        Email = user.Email,
-        FullName = user.FullName,
-        Role = (UserRole)(int)user.Role,
-        IsActive = user.IsActive,
-        CreatedAtUtc = user.CreatedAtUtc.ToIso(),
-        LastLoginAtUtc = user.LastLoginAtUtc.ToIsoOrNull()
-    };
+        var dto = new UserDto
+        {
+            Id = user.Id,
+            Username = user.Username,
+            Email = user.Email,
+            FullName = user.FullName,
+            Role = (UserRole)(int)user.Role,
+            IsActive = user.IsActive,
+            CreatedAtUtc = user.CreatedAtUtc.ToIso()
+        };
+
+        if (user.LastLoginAtUtc.HasValue)
+        {
+            dto.LastLoginAtUtc = user.LastLoginAtUtc.Value.ToIso();
+        }
+
+        return dto;
+    }
 
     public static CategoryDto ToDto(this Category category, int productCount) => new()
     {
@@ -119,8 +128,6 @@ public static class ContractMappings
             SupplierId = order.SupplierId,
             SupplierName = order.Supplier?.CompanyName ?? string.Empty,
             OrderDateUtc = order.OrderDateUtc.ToIso(),
-            ExpectedDateUtc = order.ExpectedDateUtc.ToIsoOrNull(),
-            ReceivedDateUtc = order.ReceivedDateUtc.ToIsoOrNull(),
             Status = (PurchaseStatus)(int)order.Status,
             Subtotal = order.Subtotal.ToWire(),
             TaxRate = order.TaxRate.ToWire(),
@@ -131,6 +138,18 @@ public static class ContractMappings
             CreatedBy = order.CreatedByName,
             CreatedAtUtc = order.CreatedAtUtc.ToIso()
         };
+
+        // Optional protobuf fields reject null. Set them only when there's a value;
+        // otherwise the HasExpectedDateUtc / HasReceivedDateUtc flags stay false.
+        if (order.ExpectedDateUtc.HasValue)
+        {
+            dto.ExpectedDateUtc = order.ExpectedDateUtc.Value.ToIso();
+        }
+
+        if (order.ReceivedDateUtc.HasValue)
+        {
+            dto.ReceivedDateUtc = order.ReceivedDateUtc.Value.ToIso();
+        }
 
         dto.Items.AddRange(order.Items.Select(i => i.ToDto()));
         return dto;

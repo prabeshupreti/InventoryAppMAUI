@@ -237,7 +237,7 @@ public sealed class ReportApplicationService(IInventoryDbContext db) : IReportAp
         return products.Select(p =>
         {
             var last = lastMovements.FirstOrDefault(m => m.ProductId == p.Id);
-            return new InventoryValuationRow
+            var row = new InventoryValuationRow
             {
                 ProductId = p.Id,
                 Sku = p.Sku,
@@ -250,9 +250,15 @@ public sealed class ReportApplicationService(IInventoryDbContext db) : IReportAp
                 UnitPrice = p.UnitPrice.ToWire(),
                 StockValue = (p.CurrentStock * p.CostPrice).ToWire(),
                 RetailValue = (p.CurrentStock * p.UnitPrice).ToWire(),
-                LastMovementType = last is null ? MovementType.Unspecified : (MovementType)(int)last.MovementType,
-                LastMovementAtUtc = last?.CreatedAtUtc.ToIso()
+                LastMovementType = last is null ? MovementType.Unspecified : (MovementType)(int)last.MovementType
             };
+
+            if (last is not null)
+            {
+                row.LastMovementAtUtc = last.CreatedAtUtc.ToIso();
+            }
+
+            return row;
         }).ToList();
     }
 

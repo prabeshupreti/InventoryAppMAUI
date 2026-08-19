@@ -14,6 +14,7 @@ public static class TimeConversion
     public static string ToIso(this DateTime value) =>
         DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString(Format, CultureInfo.InvariantCulture);
 
+    // delete this method:
     public static string? ToIsoOrNull(this DateTime? value) => value?.ToIso();
 
     public static DateTime ParseUtc(string? value, DateTime fallback)

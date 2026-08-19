@@ -21,6 +21,7 @@
     <ProjectReference Include="..\InventoryApp.Application\InventoryApp.Application.csproj" />
     <ProjectReference Include="..\InventoryApp.Infrastructure\InventoryApp.Infrastructure.csproj" />
     <ProjectReference Include="..\InventoryApp.Contracts\InventoryApp.Contracts.csproj" />
+    <ProjectReference Include="..\InventoryApp.ServiceDefaults\InventoryApp.ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>

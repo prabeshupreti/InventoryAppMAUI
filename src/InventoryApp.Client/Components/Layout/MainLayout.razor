@@ -5,39 +5,45 @@
 
 <AuthorizeView>
     <Authorized>
-        <FluentLayout>
-            <FluentHeader>
-                <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalGap="10">
-                    <FluentButton Appearance="Appearance.Stealth"
-                                  IconStart="@(new Icons.Regular.Size20.Navigation())"
-                                  Title="Toggle navigation"
-                                  Class="nav-toggle"
-                                  OnClick="@(() => _navExpanded = !_navExpanded)" />
-                    <FluentIcon Value="@(new Icons.Filled.Size24.BoxMultiple())" Color="Color.Fill" />
-                    <FluentLabel Typo="Typography.PaneHeader">Inventory Manager</FluentLabel>
+        <div class="app-shell">
+            <header class="app-header">
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Icons.Regular.Size20.Navigation())"
+                              Title="Toggle navigation"
+                              Class="app-header__toggle"
+                              OnClick="@ToggleNav" />
 
-                    <FluentSpacer />
+                <FluentIcon Value="@(new Icons.Filled.Size24.BoxMultiple())" Color="Color.Fill" />
+                <span class="app-header__title">Inventory Manager</span>
 
-                    <FluentLabel Typo="Typography.Body" Class="header-user">
-                        @context.User.FindFirst("fullName")?.Value
-                    </FluentLabel>
+                <div class="app-header__spacer"></div>
 
-                    <FluentButton Appearance="Appearance.Stealth"
-                                  IconStart="@(new Icons.Regular.Size20.Person())"
-                                  Title="My account"
-                                  OnClick="GoToProfile" />
+                <span class="app-header__user">
+                    @context.User.FindFirst("fullName")?.Value
+                </span>
 
-                    <FluentButton Appearance="Appearance.Stealth"
-                                  IconStart="@(new Icons.Regular.Size28.ArrowExit())"
-                                  Title="Sign out"
-                                  OnClick="ConfirmSignOutAsync" />
-                </FluentStack>
-            </FluentHeader>
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Icons.Regular.Size20.Person())"
+                              Title="My account"
+                              OnClick="GoToProfile" />
 
-            <FluentStack Class="main-stack" Orientation="Orientation.Horizontal">
-                <NavMenu Expanded="_navExpanded" />
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Icons.Regular.Size20.SignOut())"
+                              Title="Sign out"
+                              OnClick="ConfirmSignOutAsync" />
+            </header>
 
-                <FluentBodyContent Class="body-content">
+            <div class="app-body">
+                <aside class="app-nav @(_navExpanded ? "app-nav--open" : "app-nav--closed")">
+                    <NavMenu OnNavigate="@CloseNavOnMobile" />
+                </aside>
+
+                @if (_navExpanded)
+                {
+                    <div class="app-nav__scrim" @onclick="CloseNav"></div>
+                }
+
+                <main class="app-content">
                     <ErrorBoundary @ref="_errorBoundary">
                         <ChildContent>
                             <div class="content-area">
@@ -49,14 +55,16 @@
                                 <FluentMessageBar Title="Something went wrong" Intent="@MessageIntent.Error">
                                     @exception.Message
                                     <FluentButton Appearance="Appearance.Accent" Class="mt-2"
-                                                  OnClick="RecoverAsync">Reload this page</FluentButton>
+                                                  OnClick="RecoverAsync">
+                                        Reload this page
+                                    </FluentButton>
                                 </FluentMessageBar>
                             </div>
                         </ErrorContent>
                     </ErrorBoundary>
-                </FluentBodyContent>
-            </FluentStack>
-        </FluentLayout>
+                </main>
+            </div>
+        </div>
     </Authorized>
     <NotAuthorized>
         @Body
@@ -64,26 +72,113 @@
 </AuthorizeView>
 
 <style>
-    .main-stack {
-        height: calc(100vh - 50px);
-        overflow: hidden;
+    /* App shell owns the full viewport - both html and body are 100% in app.css */
+    .app-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
         width: 100%;
+        overflow: hidden;
+        background: var(--neutral-layer-1);
     }
 
-    .body-content {
-        overflow-y: auto;
-        height: 100%;
+    .app-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        height: 48px;
+        flex-shrink: 0;
+        background: var(--neutral-layer-4);
+        color: var(--neutral-fill-inverse-rest);
+        border-bottom: 1px solid var(--neutral-stroke-divider-rest);
+        z-index: 5;
+    }
+
+    .app-header__title {
+        font-size: var(--type-ramp-plus-1-font-size);
+        font-weight: 600;
+        color: var(--neutral-fill-inverse-rest);
+    }
+
+    .app-header__spacer {
         flex: 1;
     }
 
-    .header-user {
+    .app-header__user {
         color: var(--neutral-fill-inverse-rest);
-        margin-right: 4px;
+        font-size: var(--type-ramp-base-font-size);
+        opacity: 0.9;
     }
 
-    @@media (min-width: 861px) {
-        .nav-toggle {
+    /* Body row: nav on the left, content fills the rest. */
+    .app-body {
+        flex: 1;
+        display: flex;
+        min-height: 0; /* critical: lets the child .app-content actually scroll */
+        position: relative;
+    }
+
+    .app-nav {
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--neutral-layer-2);
+        border-right: 1px solid var(--neutral-stroke-divider-rest);
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .app-content {
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: var(--neutral-layer-1);
+    }
+
+    .app-nav__scrim {
+        display: none;
+    }
+
+    /* Hide desktop toggle by default */
+    .app-header__toggle {
+        display: none;
+    }
+
+    /* Mobile: overlay nav */
+    @@media (max-width: 860px) {
+        .app-header__toggle {
+            display: inline-flex;
+        }
+
+        .app-header__user {
             display: none;
+        }
+
+        .app-nav {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 10;
+            box-shadow: var(--elevation-shadow-flyout);
+            transition: transform 180ms ease;
+        }
+
+        .app-nav--closed {
+            transform: translateX(-105%);
+        }
+
+        .app-nav--open {
+            transform: translateX(0);
+        }
+
+        .app-nav__scrim {
+            display: block;
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 9;
         }
     }
 </style>
@@ -91,6 +186,25 @@
 @code {
     private bool _navExpanded = true;
     private ErrorBoundary? _errorBoundary;
+
+    protected override void OnInitialized()
+    {
+        // Start collapsed on mobile; the JS media-query bridge is overkill for this.
+        // On first render the CSS media query hides the toggle anyway, so this only
+        // matters for narrow desktop windows.
+        _navExpanded = true;
+    }
+
+    private void ToggleNav() => _navExpanded = !_navExpanded;
+
+    private void CloseNav() => _navExpanded = false;
+
+    private void CloseNavOnMobile()
+    {
+        // NavMenu raises this on link click so the overlay dismisses itself on mobile.
+        // On desktop the CSS keeps the nav visible regardless of this flag.
+        _navExpanded = false;
+    }
 
     private void GoToProfile() => Navigation.NavigateTo("/account");
 

@@ -23,7 +23,10 @@ public static class MauiProgram
         builder.Services.AddMauiBlazorWebView();
 
         // Fluent UI Blazor: components, icons and emoji assets.
-        builder.Services.AddFluentUIComponents();
+        builder.Services.AddFluentUIComponents(options =>
+        {
+            options.ValidateClassNames = false;
+        });
 
         // Transport layer.
         builder.Services.AddSingleton<ITokenStore, SecureTokenStore>();

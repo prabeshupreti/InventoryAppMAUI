@@ -69,7 +69,7 @@ public sealed class InventoryAuthStateProvider(
     {
         try
         {
-            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token); 
 
             // Expiry is checked locally so an obviously stale token never triggers a round trip.
             if (jwt.ValidTo <= DateTime.UtcNow)
